@@ -8,9 +8,10 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  orderBy
+  orderBy,
+  increment
 } from "firebase/firestore";
-import { Nomination, Nominee, Message, TimelineSettings, UserVote } from "./types";
+import { Nomination, Nominee, Message, TimelineSettings, UserVote, NomineeGroup, GroupingAuditLog } from "./types";
 
 export const dbService = {
   // Listeners
@@ -49,6 +50,20 @@ export const dbService = {
     });
   },
   
+  listenToNomineeGroups: (callback: (groups: NomineeGroup[]) => void) => {
+    return onSnapshot(collection(db, "nomineeGroups"), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NomineeGroup));
+      callback(data);
+    });
+  },
+
+  listenToGroupingAuditLogs: (callback: (logs: GroupingAuditLog[]) => void) => {
+    return onSnapshot(query(collection(db, "groupingAuditLogs"), orderBy("timestamp", "desc")), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupingAuditLog));
+      callback(data);
+    });
+  },
+  
   // Mutations
   updateSettings: (settings: TimelineSettings) => {
     return setDoc(doc(db, "settings", "timeline"), settings, { merge: true });
@@ -64,6 +79,18 @@ export const dbService = {
   },
   deleteNomination: (id: string) => {
     return deleteDoc(doc(db, "nominations", id));
+  },
+  addNomineeGroup: (group: Omit<NomineeGroup, 'id'>) => {
+    return addDoc(collection(db, "nomineeGroups"), group);
+  },
+  updateNomineeGroup: (id: string, data: Partial<NomineeGroup>) => {
+    return updateDoc(doc(db, "nomineeGroups", id), data);
+  },
+  deleteNomineeGroup: (id: string) => {
+    return deleteDoc(doc(db, "nomineeGroups", id));
+  },
+  addGroupingAuditLog: (log: Omit<GroupingAuditLog, 'id'>) => {
+    return addDoc(collection(db, "groupingAuditLogs"), log);
   },
   addMessage: (msg: Omit<Message, 'id'>) => {
     return addDoc(collection(db, "messages"), msg);
@@ -83,6 +110,9 @@ export const dbService = {
   },
   updateNomineeVotes: (id: string, votes: number) => {
     return setDoc(doc(db, "nominees", id), { votes }, { merge: true });
+  },
+  incrementNomineeVotes: (id: string, amount: number) => {
+    return setDoc(doc(db, "nominees", id), { votes: increment(amount) }, { merge: true });
   },
   listenToAdminCredentials: (callback: (creds: any) => void) => {
     return onSnapshot(doc(db, "settings", "adminCredentials"), (doc) => {

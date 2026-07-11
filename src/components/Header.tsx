@@ -16,6 +16,7 @@ interface HeaderProps {
   setActiveTab: (tab: string) => void;
   timelineSettings?: TimelineSettings;
   simulatedDate?: Date;
+  isAdminLoggedIn: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -24,7 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab, 
   setActiveTab,
   timelineSettings,
-  simulatedDate
+  simulatedDate,
+  isAdminLoggedIn
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -56,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: "overview", label: "Overview", icon: Info },
     { id: "nominate", label: "Nomination Portal", icon: FileText, showPing: isNominationActive },
     { id: "vote", label: "Voting Center", icon: Vote, showPing: isVotingActive },
-    { id: "results", label: "Live Results & Gala", icon: Trophy, showPing: isResultsActive },
+    ...(isAdminLoggedIn || settings?.resultsVisible ? [{ id: "results", label: "Live Results & Gala", icon: Trophy, showPing: isResultsActive }] : []),
     { id: "admin", label: "Admin Console", icon: Shield },
   ];
 
@@ -172,7 +174,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Call to Action Button */}
-          {(isVotingActive || isResultsActive) && (
+          {(isVotingActive || (isResultsActive && (isAdminLoggedIn || settings?.resultsVisible))) && (
             <button
               onClick={() => handleTabClick(isVotingActive ? "vote" : "results")}
               className="hidden sm:inline-flex text-xs font-bold bg-white/5 hover:bg-white/10 text-amber-300 hover:text-amber-400 border border-amber-400/30 hover:border-amber-400/50 px-3.5 py-2 rounded-xl transition-all cursor-pointer"

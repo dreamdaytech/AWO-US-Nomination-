@@ -37,7 +37,10 @@ import {
   Tooltip,
   Cell
 } from "recharts";
-import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings } from "../types";
+import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog } from "../types";
+import { AdminGroupsTab } from "./AdminGroupsTab";
+import { Users, Search, Filter, ArrowUpDown, ChevronDown, X } from "lucide-react";
+
 import { formatDateTime } from "../utils";
 import { parseLocalDateTime } from "../utils";
 
@@ -68,6 +71,7 @@ interface AdminDashboardProps {
   onUpdateTimelineSettings: (settings: TimelineSettings) => void;
   onSetSimulatedDate: (date: Date) => void;
   onToggleApproveNomination: (id: string) => void;
+  onDeclineNomination: (id: string) => void;
   onDeleteNomination: (id: string) => void;
   onUpdateNomineeVotes: (id: string, votes: number) => void;
   onDeleteMessage: (id: string) => void;
@@ -78,6 +82,12 @@ interface AdminDashboardProps {
   onDeleteNominee: (id: string) => void;
   adminCreds: {email: string, password: string};
   onUpdateAdminCreds: (creds: {email: string, password: string}) => void;
+  nomineeGroups: NomineeGroup[];
+  groupingAuditLogs: GroupingAuditLog[];
+  onCreateNomineeGroup: (group: Omit<NomineeGroup, "id">) => Promise<string>;
+  onUpdateNomineeGroup: (id: string, data: Partial<NomineeGroup>) => Promise<void>;
+  onDeleteNomineeGroup: (id: string) => Promise<void>;
+  onAddGroupingAuditLog: (log: Omit<GroupingAuditLog, "id">) => Promise<void>;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -92,6 +102,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateTimelineSettings,
   onSetSimulatedDate,
   onToggleApproveNomination,
+  onDeclineNomination,
   onDeleteNomination,
   onUpdateNomineeVotes,
   onDeleteMessage,
@@ -101,9 +112,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateNominee,
   onDeleteNominee,
   adminCreds,
-  onUpdateAdminCreds
+  onUpdateAdminCreds,
+  nomineeGroups,
+  groupingAuditLogs,
+  onCreateNomineeGroup,
+  onUpdateNomineeGroup,
+  onDeleteNomineeGroup,
+  onAddGroupingAuditLog
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings">("time");
+  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings">("time");
+  const [manageNomineesTab, setManageNomineesTab] = useState<"all" | "manual" | "approved">("all");
+  const [manageNomineesSearch, setManageNomineesSearch] = useState("");
+  const [manageNomineesCategoryFilter, setManageNomineesCategoryFilter] = useState<string>("all");
+  const [manageNomineesSortBy, setManageNomineesSortBy] = useState<"category" | "name" | "votes-desc" | "votes-asc">("category");
   const [customDateStr, setCustomDateStr] = useState(simulatedDate.toISOString().split("T")[0]);
   const [selectedNominationId, setSelectedNominationId] = useState<string | null>(null);
 
@@ -115,6 +136,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [formVotingStart, setFormVotingStart] = useState(timelineSettings.votingStart.slice(0, 16));
   const [formVotingEnd, setFormVotingEnd] = useState(timelineSettings.votingEnd.slice(0, 16));
   const [formCeremony, setFormCeremony] = useState(timelineSettings.ceremony.slice(0, 16));
+  const [formResultsVisible, setFormResultsVisible] = useState(!!timelineSettings.resultsVisible);
 
   const [formAdminEmail, setFormAdminEmail] = useState(adminCreds.email);
   const [formAdminPassword, setFormAdminPassword] = useState(adminCreds.password);
@@ -124,17 +146,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newNomineeCategory, setNewNomineeCategory] = useState(categories[0]?.id || 1);
   const [newNomineePicture, setNewNomineePicture] = useState("");
   const [newNomineeDesc, setNewNomineeDesc] = useState("");
+  const [newNomineeListType, setNewNomineeListType] = useState<"final" | "approved">("final");
   const [newNomineeSuccess, setNewNomineeSuccess] = useState("");
   const [editingNomineeId, setEditingNomineeId] = useState<string | null>(null);
+  const [isNomineeModalOpen, setIsNomineeModalOpen] = useState(false);
   const [nomineeViewMode, setNomineeViewMode] = useState<"grid" | "list">("grid");
 
   const [successMessage, setSuccessMessage] = useState("");
   const [validationError, setValidationError] = useState("");
   const [nominationToDelete, setNominationToDelete] = useState<string | null>(null);
 
+
+  // Ballot Filters
+  const [ballotSearch, setBallotSearch] = useState("");
+  const [ballotCategoryFilter, setBallotCategoryFilter] = useState("all");
+  const [ballotSortBy, setBallotSortBy] = useState<"category" | "votes-desc" | "votes-asc" | "name">("category");
+
   // Nomination Desk Filters
   const [nominationSearch, setNominationSearch] = useState("");
-  const [nominationStatusFilter, setNominationStatusFilter] = useState<"all" | "approved" | "pending">("all");
+  const [nominationStatusFilter, setNominationStatusFilter] = useState<"all" | "approved" | "pending" | "declined">("all");
   const [nominationCategoryFilter, setNominationCategoryFilter] = useState<string>("all");
   const [nominationSortBy, setNominationSortBy] = useState<"date" | "name">("date");
 
@@ -146,6 +176,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormVotingStart(timelineSettings.votingStart.slice(0, 16));
     setFormVotingEnd(timelineSettings.votingEnd.slice(0, 16));
     setFormCeremony(timelineSettings.ceremony.slice(0, 16));
+    setFormResultsVisible(!!timelineSettings.resultsVisible);
   }, [timelineSettings]);
 
   // Stats calculation
@@ -154,6 +185,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const pendingNominations = nominations.filter((n) => !n.approved).length;
 
   // Filter & Sort Nominations
+  const displayedNominees = nominees.filter(n => manageNomineesTab === "all" ? true : manageNomineesTab === "manual" ? (n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-"))) : (n.listType === "approved" || (!n.listType && n.id.startsWith("custom-nom-"))));
   const filteredNominations = nominations
     .filter((nom) => {
       // Search
@@ -164,7 +196,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       // Status
       const matchesStatus = 
         nominationStatusFilter === "all" ? true :
-        nominationStatusFilter === "approved" ? nom.approved : !nom.approved;
+        nominationStatusFilter === "approved" ? nom.approved : nominationStatusFilter === "declined" ? nom.declined : !nom.approved && !nom.declined;
         
       // Category
       const matchesCategory = 
@@ -239,6 +271,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         name: newNomineeName,
         description: newNomineeDesc || "Added by Admin",
         avatarUrl: newNomineePicture,
+        listType: newNomineeListType,
       });
       setNewNomineeSuccess("Nominee updated successfully!");
     } else {
@@ -248,6 +281,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         name: newNomineeName,
         description: newNomineeDesc || "Added by Admin",
         avatarUrl: newNomineePicture,
+        listType: newNomineeListType,
         votes: 0
       });
       setNewNomineeSuccess("Nominee created successfully!");
@@ -256,6 +290,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewNomineePicture("");
     setNewNomineeDesc("");
     setEditingNomineeId(null);
+    setNewNomineeListType("final");
     setTimeout(() => setNewNomineeSuccess(""), 3000);
   };
 
@@ -315,6 +350,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       votingStart: formVotingStart.length === 16 ? formVotingStart + ":00" : formVotingStart,
       votingEnd: formVotingEnd.length === 16 ? formVotingEnd + ":00" : formVotingEnd,
       ceremony: formCeremony.length === 16 ? formCeremony + ":00" : formCeremony,
+      resultsVisible: formResultsVisible,
     });
 
     setSuccessMessage("Award timeline dates and schedules updated successfully!");
@@ -322,6 +358,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const selectedNomination = nominations.find((n) => n.id === selectedNominationId);
+
+  const [groupingModalOpen, setGroupingModalOpen] = useState(false);
+  const [selectedForGrouping, setSelectedForGrouping] = useState<Set<string>>(new Set());
+  const getDuplicates = (selected: Nomination | undefined, all: Nomination[], groups: NomineeGroup[]) => {
+    if (!selected) return [];
+    // Filter out nominations already in the current group
+    return all.filter(n => 
+      n.id !== selected.id && 
+      n.categoryId === selected.categoryId &&
+      (n.nomineeName.toLowerCase() === selected.nomineeName.toLowerCase() || 
+       n.nomineeName.toLowerCase().includes(selected.nomineeName.toLowerCase()) || 
+       selected.nomineeName.toLowerCase().includes(n.nomineeName.toLowerCase()))
+    );
+  };
+  const similarNominations = getDuplicates(selectedNomination, nominations, nomineeGroups);
+
 
   return (
     <div className="space-y-8" id="admin-dashboard-container">
@@ -417,106 +469,107 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* TABS NAVIGATION & CONTROL AREA */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Side Tab Buttons */}
-        <div className="lg:col-span-3 space-y-2 bg-white/5 border border-white/10 p-4 rounded-2xl">
-          <span className="text-[10px] font-bold text-white/40 tracking-wider uppercase px-2 block mb-2">Console Submenus</span>
-          <button
-            onClick={() => setActiveSubTab("time")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "time"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <Calendar size={14} className={activeSubTab === "time" ? "text-black" : "text-amber-400"} />
-            <span>Time Travel Machine</span>
-          </button>
-          
-          <button
-            onClick={() => setActiveSubTab("nominations")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer border-none outline-none ${
-              activeSubTab === "nominations"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
+      <div className="flex flex-col gap-6 items-start">
+        {/* Top Horizontal Tab Buttons */}
+        <div className="w-full bg-white/5 border border-white/10 p-2.5 rounded-2xl overflow-x-auto custom-scrollbar">
+          <div className="flex items-center gap-2 min-w-max">
+            <span className="text-[10px] font-bold text-white/40 tracking-wider uppercase px-3 hidden md:block">Console Submenus</span>
+            
+            <button
+              onClick={() => setActiveSubTab("time")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "time"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Calendar size={14} className={activeSubTab === "time" ? "text-black" : "text-amber-400"} />
+              <span>Time Travel</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveSubTab("nominations")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "nominations"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
               <FileText size={14} className={activeSubTab === "nominations" ? "text-black" : "text-amber-400"} />
               <span>Nomination Desk</span>
-            </div>
-            {pendingNominations > 0 && (
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono ${activeSubTab === "nominations" ? "bg-black text-amber-400" : "bg-amber-400 text-black animate-pulse"}`}>
-                {pendingNominations}
-              </span>
-            )}
-          </button>
+              {pendingNominations > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold font-mono ml-1 ${activeSubTab === "nominations" ? "bg-black text-amber-400" : "bg-amber-400 text-black animate-pulse"}`}>
+                  {pendingNominations}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("manage_nominees")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "manage_nominees"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <User size={14} className={activeSubTab === "manage_nominees" ? "text-black" : "text-amber-400"} />
-            <span>Manage Nominees</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab("manage_nominees")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "manage_nominees"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <User size={14} className={activeSubTab === "manage_nominees" ? "text-black" : "text-amber-400"} />
+              <span>Manage Nominees</span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("ballots")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "ballots"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <BarChart3 size={14} className={activeSubTab === "ballots" ? "text-black" : "text-amber-400"} />
-            <span>Ballot & Standings Desk</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab("ballots")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "ballots"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <BarChart3 size={14} className={activeSubTab === "ballots" ? "text-black" : "text-amber-400"} />
+              <span>Ballots & Standings</span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("guestbook")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "guestbook"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <MessageSquare size={14} className={activeSubTab === "guestbook" ? "text-black" : "text-amber-400"} />
-            <span>Guestbook Moderation</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab("guestbook")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "guestbook"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <MessageSquare size={14} className={activeSubTab === "guestbook" ? "text-black" : "text-amber-400"} />
+              <span>Guestbook</span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("schedule")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "schedule"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-            id="admin-subtab-schedule-btn"
-          >
-            <Sliders size={14} className={activeSubTab === "schedule" ? "text-black" : "text-amber-400"} />
-            <span>Event Schedule Settings</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab("settings")}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 cursor-pointer border-none outline-none ${
-              activeSubTab === "settings"
-                ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            }`}
-            id="admin-subtab-settings-btn"
-          >
-            <Shield size={14} className={activeSubTab === "settings" ? "text-black" : "text-amber-400"} />
-            <span>Admin Settings</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab("schedule")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "schedule"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+              id="admin-subtab-schedule-btn"
+            >
+              <Sliders size={14} className={activeSubTab === "schedule" ? "text-black" : "text-amber-400"} />
+              <span>Event Schedule</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveSubTab("settings")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border-none outline-none whitespace-nowrap ${
+                activeSubTab === "settings"
+                  ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold shadow-md"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+              id="admin-subtab-settings-btn"
+            >
+              <Shield size={14} className={activeSubTab === "settings" ? "text-black" : "text-amber-400"} />
+              <span>Settings</span>
+            </button>
+          </div>
         </div>
 
-        {/* Right Side Working Content */}
-        <div className="lg:col-span-9 bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
+        {/* Working Content Area */}
+        <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
           
           {/* TAB 1: TIME TRAVEL MACHINE */}
           {activeSubTab === "time" && (
@@ -636,7 +689,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* TAB 2: NOMINATION DESK */}
-          {activeSubTab === "nominations" && (
+          {activeSubTab === "nominations" && !groupingModalOpen && (
             <div className="space-y-6" id="admin-subtab-nominations">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -677,6 +730,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     >
                       <option value="all">All Submissions</option>
                       <option value="pending">Pending Approval</option>
+                      <option value="declined">Declined</option>
                       <option value="approved">Approved</option>
                     </select>
                   </div>
@@ -714,7 +768,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <FileText className="mx-auto text-white/20" size={32} />
                   <p className="text-xs text-white/40 font-medium">No custom nominations have been submitted yet.</p>
                   <p className="text-[10px] text-white/30 max-w-xs mx-auto">
-                    Go to the <strong>Nomination Portal</strong>, submit a sandbox entry, and it will show up here immediately for moderation.
+                    Go to the <strong>Nomination Portal</strong>, submit an entry, and it will show up here immediately for moderation.
                   </p>
                 </div>
               ) : filteredNominations.length === 0 ? (
@@ -752,9 +806,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
                               nom.approved 
                                 ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/20" 
+                                : nom.declined ? "bg-red-400/15 text-red-400 border border-red-400/20"
                                 : "bg-amber-400/15 text-amber-400 border border-amber-400/20"
                             }`}>
-                              {nom.approved ? "Approved" : "Pending"}
+                              {nom.approved ? "Approved" : nom.declined ? "Declined" : "Pending"}
                             </span>
                           </div>
                           
@@ -781,17 +836,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           <div className="flex gap-1">
-                            <button
-                              onClick={() => onToggleApproveNomination(selectedNomination.id)}
-                              className={`p-2 rounded-lg border cursor-pointer transition-colors ${
-                                selectedNomination.approved
-                                  ? "bg-emerald-400/10 border-emerald-400/20 text-emerald-400 hover:bg-emerald-400/20"
-                                  : "bg-amber-400/10 border-amber-400/20 text-amber-400 hover:bg-amber-400/20"
-                              }`}
-                              title={selectedNomination.approved ? "Disapprove Entry" : "Approve Entry"}
-                            >
-                              {selectedNomination.approved ? <CheckCircle size={15} /> : <XCircle size={15} />}
-                            </button>
+                            {!selectedNomination.approved && (
+                              <button
+                                onClick={() => onToggleApproveNomination(selectedNomination.id)}
+                                className="p-2 rounded-lg border cursor-pointer transition-colors bg-emerald-400/10 border-emerald-400/20 text-emerald-400 hover:bg-emerald-400/20"
+                                title="Approve Entry"
+                              >
+                                <CheckCircle size={15} />
+                              </button>
+                            )}
+                            {selectedNomination.approved && (
+                              <button
+                                onClick={() => onToggleApproveNomination(selectedNomination.id)}
+                                className="p-2 rounded-lg border cursor-pointer transition-colors bg-amber-400/10 border-amber-400/20 text-amber-400 hover:bg-amber-400/20"
+                                title="Revoke Approval (Move to Pending)"
+                              >
+                                <XCircle size={15} />
+                              </button>
+                            )}
+                            {!selectedNomination.declined && !selectedNomination.approved && (
+                              <button
+                                onClick={() => onDeclineNomination(selectedNomination.id)}
+                                className="p-2 rounded-lg border cursor-pointer transition-colors bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20"
+                                title="Decline Entry"
+                              >
+                                <XCircle size={15} />
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setNominationToDelete(selectedNomination.id);
@@ -826,11 +897,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
 
+
+                        {/* Similar Nominations UI */}
+                        {similarNominations.length > 0 && (
+                          <div className="bg-blue-400/5 border border-blue-400/10 text-blue-400 rounded-xl p-3.5 text-[11px] space-y-2 mt-4">
+                            <div className="flex items-center gap-2 font-bold">
+                              <Users size={14} />
+                              <span>{similarNominations.length} similar nomination(s) found!</span>
+                            </div>
+                            <p className="text-white/70">
+                              These might be duplicates. You can group them to consolidate votes during public voting.
+                            </p>
+                            <button onClick={() => { setGroupingModalOpen(true); setSelectedForGrouping(new Set(similarNominations.map(s => s.id))); }} className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded transition-colors font-bold cursor-pointer">
+                              Review and Group
+                            </button>
+                          </div>
+                        )}
+                        
+                        
+
                         {/* Approved candidate note */}
                         {selectedNomination.approved ? (
                           <div className="bg-emerald-400/5 border border-emerald-400/10 text-emerald-400 rounded-xl p-3.5 text-[11px] flex items-center gap-2">
                             <CheckCircle size={14} />
                             <span>This nominee is <strong>authorized</strong> and will dynamically appear in the <strong>Voting Center</strong> during the voting period.</span>
+                          </div>
+                        ) : selectedNomination.declined ? (
+                          <div className="bg-orange-400/5 border border-orange-400/10 text-orange-400 rounded-xl p-3.5 text-[11px] flex items-center gap-2">
+                            <XCircle size={14} />
+                            <span>This submission is <strong>declined</strong>. It will not appear in the voting center.</span>
                           </div>
                         ) : (
                           <div className="bg-amber-400/5 border border-amber-400/10 text-amber-400 rounded-xl p-3.5 text-[11px] flex items-center gap-2">
@@ -851,155 +946,194 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* TAB: MANAGE NOMINEES */}
+
+          {activeSubTab === "nominations" && groupingModalOpen && selectedNomination && (
+            <div className="space-y-6 animate-fade-in" id="admin-subtab-create-group">
+              <div className="flex items-center gap-4 border-b border-white/10 pb-4">
+                <button 
+                  onClick={() => setGroupingModalOpen(false)} 
+                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/70 hover:text-white transition-colors"
+                >
+                  <ChevronRight className="rotate-180" size={18} />
+                </button>
+                <div>
+                  <h3 className="text-xl font-extrabold text-white flex items-center gap-2">
+                    <Users className="text-amber-400"/> Create Nominee Group
+                  </h3>
+                  <p className="text-xs text-white/60 mt-1">
+                    Select the nominations you want to group together. They will be displayed as a single entry during voting.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                   <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wide">Primary (Current Selection)</h4>
+                   <div className="bg-amber-400/5 border border-amber-400/30 rounded-xl p-5 text-sm space-y-3">
+                     <div className="flex justify-between items-start">
+                       <span className="text-[11px] font-mono text-white/50">{new Date(selectedNomination.submittedAt).toLocaleDateString()}</span>
+                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${selectedNomination.approved ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/20" : selectedNomination.declined ? "bg-red-400/15 text-red-400 border border-red-400/20" : "bg-amber-400/15 text-amber-400 border border-amber-400/20"}`}>
+                         {selectedNomination.approved ? 'Approved' : selectedNomination.declined ? 'Declined' : 'Pending'}
+                       </span>
+                     </div>
+                     <div className="text-white text-xl font-bold">{selectedNomination.nomineeName}</div>
+                     <div className="text-white/80 italic bg-black/40 p-4 rounded-lg leading-relaxed">"{selectedNomination.rationale}"</div>
+                     <div className="pt-2 border-t border-white/10 text-xs text-white/60 flex flex-col gap-1">
+                       <span><strong>Nominator:</strong> {selectedNomination.nominatorName}</span>
+                       <span className="font-mono">{selectedNomination.nominatorEmail}</span>
+                     </div>
+                   </div>
+                   
+                   <div className="flex flex-col gap-3 mt-4">
+                     <button 
+                       onClick={async () => {
+                          const allIds = [selectedNomination.id, ...Array.from(selectedForGrouping)];
+                          const groupId = await onCreateNomineeGroup({
+                            categoryId: selectedNomination.categoryId,
+                            name: selectedNomination.nomineeName,
+                            description: selectedNomination.rationale,
+                            nominationIds: allIds,
+                            approved: true
+                          });
+                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
+                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "APPROVE_GROUP", groupId, timestamp: new Date().toISOString() });
+                          setGroupingModalOpen(false);
+                          setActiveSubTab("groups");
+                       }}
+                       className="w-full py-4 bg-gradient-to-r from-emerald-400 to-emerald-600 text-black font-extrabold text-sm rounded-xl hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer">
+                       Create & Approve Group ({selectedForGrouping.size + 1} Nominations)
+                     </button>
+                     <button 
+                       onClick={async () => {
+                          const allIds = [selectedNomination.id, ...Array.from(selectedForGrouping)];
+                          const groupId = await onCreateNomineeGroup({
+                            categoryId: selectedNomination.categoryId,
+                            name: selectedNomination.nomineeName,
+                            description: selectedNomination.rationale,
+                            nominationIds: allIds,
+                            approved: false
+                          });
+                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
+                          setGroupingModalOpen(false);
+                          setActiveSubTab("groups");
+                       }}
+                       className="w-full py-3 bg-white/5 border border-white/10 text-white font-bold text-sm rounded-xl hover:bg-white/10 transition-all cursor-pointer">
+                       Create Group (Pending)
+                     </button>
+                   </div>
+                 </div>
+                 
+                 <div className="space-y-4">
+                   <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wide">Matching Nominations ({similarNominations.length})</h4>
+                   <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                     
+                     {similarNominations.map(sim => {
+                       const isSelected = selectedForGrouping.has(sim.id);
+                       return (
+                       <div key={sim.id} onClick={() => {
+                           const newSet = new Set(selectedForGrouping);
+                           if (newSet.has(sim.id)) newSet.delete(sim.id);
+                           else newSet.add(sim.id);
+                           setSelectedForGrouping(newSet);
+                       }} className={`border rounded-xl p-5 space-y-3 relative overflow-hidden transition-all cursor-pointer ${isSelected ? "bg-blue-500/10 border-blue-500/50" : "bg-white/5 border-white/10 opacity-50 hover:opacity-80"}`}>
+                         <div className={`absolute top-0 left-0 w-1 h-full ${isSelected ? "bg-blue-500" : "bg-white/20"}`}></div>
+                         <div className="flex justify-between items-start">
+                           <div className="flex items-center gap-2">
+                             <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? "bg-blue-500 border-blue-500" : "border-white/30"}`}>
+                               {isSelected && <CheckCircle size={10} className="text-white" />}
+                             </div>
+                             <span className="text-[11px] font-mono text-white/50">{new Date(sim.submittedAt).toLocaleDateString()}</span>
+                           </div>
+                           <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${sim.approved ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/20" : sim.declined ? "bg-red-400/15 text-red-400 border border-red-400/20" : "bg-amber-400/15 text-amber-400 border border-amber-400/20"}`}>
+                             {sim.approved ? 'Approved' : sim.declined ? 'Declined' : 'Pending'}
+                           </span>
+                         </div>
+                         <div className="text-white text-lg font-bold">{sim.nomineeName}</div>
+                         <div className="text-white/70 italic bg-black/40 p-3 rounded-lg text-xs leading-relaxed">"{sim.rationale}"</div>
+                         <div className="pt-2 border-t border-white/10 text-[11px] text-white/60 flex flex-col gap-1">
+                           <span><strong>Nominator:</strong> {sim.nominatorName}</span>
+                           <span className="font-mono">{sim.nominatorEmail}</span>
+                         </div>
+                       </div>
+                     )})}
+
+                   </div>
+                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === "groups" && (
+            <AdminGroupsTab
+              groups={nomineeGroups}
+              nominations={nominations}
+              categories={categories}
+              logs={groupingAuditLogs}
+              onApprove={async (id, approved) => {
+                await onUpdateNomineeGroup(id, { approved });
+                await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: approved ? "APPROVE_GROUP" : "REJECT_GROUP", groupId: id, timestamp: new Date().toISOString() });
+              }}
+              onDelete={async (id) => {
+                await onDeleteNomineeGroup(id);
+                await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId: id, timestamp: new Date().toISOString() });
+              }}
+              onRemoveNomination={async (groupId, nominationId, currentIds) => {
+                const newIds = currentIds.filter(id => id !== nominationId);
+                if (newIds.length === 0) {
+                  await onDeleteNomineeGroup(groupId);
+                  await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId, timestamp: new Date().toISOString() });
+                } else {
+                  await onUpdateNomineeGroup(groupId, { nominationIds: newIds });
+                  await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId, nominationId, timestamp: new Date().toISOString() });
+                }
+              }}
+            />
+          )}
           {activeSubTab === "manage_nominees" && (
             <div className="space-y-6 animate-fade-in" id="admin-subtab-manage-nominees">
-              <div>
-                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                  <User size={18} className="text-amber-400" />
-                  <span>{editingNomineeId ? "Edit Nominee" : "Create Nominee"}</span>
-                </h3>
-                <p className="text-xs text-white/60 mt-1 leading-relaxed">
-                  {editingNomineeId ? "Update the details of the selected nominee." : "Add a new nominee to the live voting pool manually."}
-                </p>
-              </div>
-
-              {newNomineeSuccess && (
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl flex items-center gap-2.5 animate-fade-in">
-                  <CheckCircle size={16} className="text-emerald-400 shrink-0" />
-                  <span>{newNomineeSuccess}</span>
+              {manageNomineesTab !== "approved" && (
+                <div className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/10">
+                  <div>
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <User size={18} className="text-amber-400" />
+                      <span>Nominees Pool</span>
+                    </h3>
+                    <p className="text-xs text-white/60 mt-1">Manage the list of nominees available for voting.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setEditingNomineeId(null);
+                      setNewNomineeName("");
+                      setNewNomineePicture("");
+                      setNewNomineeDesc("");
+                      setNewNomineeListType("final");
+                      setIsNomineeModalOpen(true);
+                    }}
+                    className="bg-amber-400 hover:bg-amber-500 text-black px-4 py-2 rounded-xl font-bold text-xs transition-colors flex items-center gap-2"
+                  >
+                    <Plus size={14} /> Create Nominee
+                  </button>
                 </div>
               )}
 
-              <form onSubmit={handleCreateNominee} className="space-y-6 bg-white/5 p-4 rounded-xl border border-white/10">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Category */}
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-bold text-white block">
-                      Award Category
-                    </label>
-                    <select
-                      value={newNomineeCategory}
-                      onChange={(e) => setNewNomineeCategory(Number(e.target.value))}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all cursor-pointer"
-                    >
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id} className="bg-[#121212]">
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Name */}
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-bold text-white block">
-                      Nominee Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newNomineeName}
-                      onChange={(e) => setNewNomineeName(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
-                      required
-                    />
-                  </div>
-
-                  {/* Picture */}
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-bold text-white block">
-                      Picture (Optional)
-                    </label>
-                    <div className="flex gap-4 items-center">
-                      {newNomineePicture && (
-                        <img src={newNomineePicture} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              const img = new Image();
-                              img.onload = () => {
-                                const canvas = document.createElement("canvas");
-                                const MAX_WIDTH = 400;
-                                const MAX_HEIGHT = 400;
-                                let width = img.width;
-                                let height = img.height;
-                                
-                                if (width > height) {
-                                  if (width > MAX_WIDTH) {
-                                    height = Math.round((height * MAX_WIDTH) / width);
-                                    width = MAX_WIDTH;
-                                  }
-                                } else {
-                                  if (height > MAX_HEIGHT) {
-                                    width = Math.round((width * MAX_HEIGHT) / height);
-                                    height = MAX_HEIGHT;
-                                  }
-                                }
-                                
-                                canvas.width = width;
-                                canvas.height = height;
-                                const ctx = canvas.getContext("2d");
-                                ctx?.drawImage(img, 0, 0, width, height);
-                                setNewNomineePicture(canvas.toDataURL("image/webp", 0.8));
-                              };
-                              img.src = reader.result as string;
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all file:bg-amber-400 file:text-black file:border-0 file:px-3 file:py-1 file:rounded-lg file:mr-4 file:font-bold file:text-xs file:cursor-pointer hover:file:bg-amber-500"
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Description */}
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-bold text-white block">
-                      Description / Organization (Optional)
-                    </label>
-                    <textarea
-                      value={newNomineeDesc}
-                      onChange={(e) => setNewNomineeDesc(e.target.value)}
-                      rows={2}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-white/5 flex gap-3">
-                  <button
-                    type="submit"
-                    className="bg-amber-400 hover:bg-amber-500 text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer shadow-md shadow-amber-400/10 flex items-center gap-2"
-                  >
-                    {editingNomineeId ? <RefreshCw size={14} /> : <Plus size={14} />}
-                    {editingNomineeId ? "Update Nominee" : "Add Nominee to Pool"}
-                  </button>
-                  {editingNomineeId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingNomineeId(null);
-                        setNewNomineeName("");
-                        setNewNomineePicture("");
-                        setNewNomineeDesc("");
-                      }}
-                      className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer"
-                    >
-                      Cancel Edit
-                    </button>
-                  )}
-                </div>
-              </form>
               
               <div className="mt-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="text-sm font-bold text-white">Existing Nominees</h4>
-                  <div className="flex bg-black/40 border border-white/10 rounded-lg p-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-2 border-b border-white/10 pb-2 sm:pb-0 sm:border-0">
+                    <button 
+                      onClick={() => setManageNomineesTab("all")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${manageNomineesTab === "all" ? "bg-amber-400 text-black" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                    >All Nominees</button>
+                    <button 
+                      onClick={() => setManageNomineesTab("manual")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${manageNomineesTab === "manual" ? "bg-amber-400 text-black" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                    >Final List</button>
+                    <button 
+                      onClick={() => setManageNomineesTab("approved")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${manageNomineesTab === "approved" ? "bg-amber-400 text-black" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                    >Approved Nominations</button>
+                  </div>
+                  <div className="flex bg-black/40 border border-white/10 rounded-lg p-1 shrink-0">
                     <button 
                       type="button"
                       onClick={() => setNomineeViewMode("grid")}
@@ -1017,124 +1151,227 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-10">
-                  {categories.filter(c => nominees.some(n => n.categoryId === c.id)).map(category => (
-                    <div key={category.id} className="space-y-4">
-                      <h5 className="text-[11px] font-extrabold text-amber-400 uppercase tracking-widest border-b border-white/10 pb-2">
-                        {category.name}
-                      </h5>
-                      
-                      {nomineeViewMode === "list" ? (
-                        <div className="space-y-3">
-                          {nominees.filter(n => n.categoryId === category.id).map((n) => (
-                            <div key={n.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-white/20">
-                              <div className="flex items-center gap-4">
-                                {n.avatarUrl ? (
-                                  <img src={n.avatarUrl} alt={n.name} className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40" />
-                                ) : (
-                                  <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-lg font-bold border border-white/10">
-                                    {n.name.charAt(0)}
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="text-sm font-bold text-white">{n.name}</p>
-                                  <p className="text-[10px] text-white/50 truncate max-w-[300px] mt-0.5">{n.description}</p>
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingNomineeId(n.id);
-                                    setNewNomineeName(n.name);
-                                    setNewNomineeCategory(n.categoryId);
-                                    setNewNomineePicture(n.avatarUrl || "");
-                                    setNewNomineeDesc(n.description);
-                                    const el = document.getElementById("admin-subtab-manage-nominees");
-                                    if (el) el.scrollIntoView({ behavior: 'smooth' });
-                                  }}
-                                  className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
-                                  title="Edit Nominee"
-                                >
-                                  <RefreshCw size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
-                                      onDeleteNominee(n.id);
-                                    }
-                                  }}
-                                  className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
-                                  title="Delete Nominee"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {nominees.filter(n => n.categoryId === category.id).map((n) => (
-                            <div key={n.id} className="bg-white/5 border border-white/10 p-5 rounded-xl flex flex-col gap-4 transition-all hover:border-white/20 relative group">
-                              <div className="flex flex-col items-center gap-4 text-center">
-                                {n.avatarUrl ? (
-                                  <img src={n.avatarUrl} alt={n.name} className="w-24 h-24 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
-                                ) : (
-                                  <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-3xl font-bold border border-white/10 shrink-0">
-                                    {n.name.charAt(0)}
-                                  </div>
-                                )}
-                                <div className="min-w-0 w-full">
-                                  <p className="text-sm font-bold text-white truncate" title={n.name}>{n.name}</p>
-                                  <p className="text-[10px] text-white/50 line-clamp-2 mt-1" title={n.description}>{n.description}</p>
-                                </div>
-                              </div>
-                              <div className="flex gap-2 mt-auto pt-4 border-t border-white/5">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingNomineeId(n.id);
-                                    setNewNomineeName(n.name);
-                                    setNewNomineeCategory(n.categoryId);
-                                    setNewNomineePicture(n.avatarUrl || "");
-                                    setNewNomineeDesc(n.description);
-                                    const el = document.getElementById("admin-subtab-manage-nominees");
-                                    if (el) el.scrollIntoView({ behavior: 'smooth' });
-                                  }}
-                                  className="flex-1 flex justify-center p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
-                                  title="Edit Nominee"
-                                >
-                                  <RefreshCw size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
-                                      onDeleteNominee(n.id);
-                                    }
-                                  }}
-                                  className="flex-1 flex justify-center p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
-                                  title="Delete Nominee"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                {/* Manage Nominees Filters & Controls */}
+                <div className="flex flex-col md:flex-row gap-3 mb-6">
+                  <div className="flex-1 relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <input
+                      type="text"
+                      placeholder="Search by nominee name or description..."
+                      value={manageNomineesSearch}
+                      onChange={(e) => setManageNomineesSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="relative flex-1 min-w-[140px]">
+                      <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                      <select
+                        value={manageNomineesCategoryFilter}
+                        onChange={(e) => setManageNomineesCategoryFilter(e.target.value)}
+                        className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                      >
+                        <option value="all">All Categories</option>
+                        {categories.map(c => <option key={c.id} value={c.id.toString()}>{c.name}</option>)}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
                     </div>
-                  ))}
+                    <div className="relative flex-1 min-w-[160px]">
+                      <ArrowUpDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                      <select
+                        value={manageNomineesSortBy}
+                        onChange={(e) => setManageNomineesSortBy(e.target.value as any)}
+                        className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                      >
+                        <option value="category">Group by Category</option>
+                        <option value="votes-desc">Highest Votes</option>
+                        <option value="votes-asc">Lowest Votes</option>
+                        <option value="name">Name (A-Z)</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-10">
+                  {(() => {
+                    let filtered = displayedNominees;
+
+                    if (manageNomineesSearch.trim()) {
+                      const q = manageNomineesSearch.toLowerCase();
+                      filtered = filtered.filter(n => 
+                        n.name.toLowerCase().includes(q) || 
+                        (n.description && n.description.toLowerCase().includes(q))
+                      );
+                    }
+
+                    if (manageNomineesCategoryFilter !== "all") {
+                      const catId = parseInt(manageNomineesCategoryFilter, 10);
+                      filtered = filtered.filter(n => n.categoryId === catId);
+                    }
+
+                    const renderNomineeGridList = (renderNominees: typeof nominees) => {
+                      if (nomineeViewMode === "list") {
+                        return (
+                          <div className="space-y-3">
+                            {renderNominees.map((n) => (
+                              <div key={n.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-white/20">
+                                <div className="flex items-center gap-4">
+                                  {n.avatarUrl ? (
+                                    <img src={n.avatarUrl} alt={n.name} className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40" />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-lg font-bold border border-white/10">
+                                      {n.name.charAt(0)}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <p className="text-sm font-bold text-white">{n.name}</p>
+                                    <p className="text-[10px] text-white/50 truncate max-w-[300px] mt-0.5">{n.description}</p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingNomineeId(n.id);
+                                      setNewNomineeName(n.name);
+                                      setNewNomineeCategory(n.categoryId);
+                                      setNewNomineePicture(n.avatarUrl || "");
+                                      setNewNomineeDesc(n.description);
+                                      setNewNomineeListType(n.listType || (!n.id.startsWith("custom-nom-") ? "final" : "approved"));
+                                      setIsNomineeModalOpen(true);
+                                    }}
+                                    className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
+                                    title="Edit Nominee"
+                                  >
+                                    <RefreshCw size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
+                                        onDeleteNominee(n.id);
+                                      }
+                                    }}
+                                    className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
+                                    title="Delete Nominee"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {renderNominees.map((n) => (
+                              <div key={n.id} className="bg-white/5 border border-white/10 p-5 rounded-xl flex flex-col gap-4 transition-all hover:border-white/20 relative group">
+                                <div className="flex flex-col items-center gap-4 text-center">
+                                  {n.avatarUrl ? (
+                                    <img src={n.avatarUrl} alt={n.name} className="w-24 h-24 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
+                                  ) : (
+                                    <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-3xl font-bold border border-white/10 shrink-0">
+                                      {n.name.charAt(0)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 w-full">
+                                    <p className="text-sm font-bold text-white truncate" title={n.name}>{n.name}</p>
+                                    <p className="text-[10px] text-white/50 line-clamp-2 mt-1" title={n.description}>{n.description}</p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 mt-auto pt-4 border-t border-white/5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingNomineeId(n.id);
+                                      setNewNomineeName(n.name);
+                                      setNewNomineeCategory(n.categoryId);
+                                      setNewNomineePicture(n.avatarUrl || "");
+                                      setNewNomineeDesc(n.description);
+                                      setNewNomineeListType(n.listType || (!n.id.startsWith("custom-nom-") ? "final" : "approved"));
+                                      setIsNomineeModalOpen(true);
+                                    }}
+                                    className="flex-1 flex justify-center p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors cursor-pointer"
+                                    title="Edit Nominee"
+                                  >
+                                    <RefreshCw size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
+                                        onDeleteNominee(n.id);
+                                      }
+                                    }}
+                                    className="flex-1 flex justify-center p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
+                                    title="Delete Nominee"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                    };
+
+                    if (manageNomineesSortBy === "category") {
+                      const displayCategories = manageNomineesCategoryFilter === "all" ? categories : categories.filter(c => c.id === parseInt(manageNomineesCategoryFilter, 10));
+                      return displayCategories.map((cat) => {
+                        const categoryNominees = filtered.filter((n) => n.categoryId === cat.id).sort((a,b) => b.votes - a.votes);
+                        if (categoryNominees.length === 0 && manageNomineesSearch.trim() !== "") return null;
+                        if (categoryNominees.length === 0) return null;
+
+                        return (
+                          <div key={cat.id} className="space-y-4">
+                            <h5 className="text-[11px] font-extrabold text-amber-400 uppercase tracking-widest border-b border-white/10 pb-2">
+                              {cat.name}
+                            </h5>
+                            {renderNomineeGridList(categoryNominees)}
+                          </div>
+                        );
+                      });
+                    } else {
+                      let sorted = [...filtered];
+                      if (manageNomineesSortBy === "votes-desc") sorted.sort((a,b) => b.votes - a.votes);
+                      if (manageNomineesSortBy === "votes-asc") sorted.sort((a,b) => a.votes - b.votes);
+                      if (manageNomineesSortBy === "name") sorted.sort((a,b) => a.name.localeCompare(b.name));
+
+                      return (
+                        <div className="space-y-4">
+                          <h5 className="text-[11px] font-extrabold text-amber-400 uppercase tracking-widest border-b border-white/10 pb-2">
+                            All Filtered Nominees
+                          </h5>
+                          {renderNomineeGridList(sorted)}
+                        </div>
+                      );
+                    }
+                  })()}
                   
-                  {nominees.length === 0 && (
+                  {(() => {
+                    let filtered = displayedNominees;
+                    if (manageNomineesSearch.trim()) {
+                      const q = manageNomineesSearch.toLowerCase();
+                      filtered = filtered.filter(n => 
+                        n.name.toLowerCase().includes(q) || 
+                        (n.description && n.description.toLowerCase().includes(q))
+                      );
+                    }
+                    if (manageNomineesCategoryFilter !== "all") {
+                      const catId = parseInt(manageNomineesCategoryFilter, 10);
+                      filtered = filtered.filter(n => n.categoryId === catId);
+                    }
+                    return filtered.length === 0 ? (
                     <div className="text-center p-8 bg-white/5 border border-white/10 rounded-xl">
                       <User size={32} className="mx-auto text-white/20 mb-3" />
-                      <p className="text-xs text-white/50 font-bold">No nominees added yet.</p>
-                      <p className="text-[10px] text-white/40 mt-1">Use the form above to add contenders to the live voting pool.</p>
+                      <p className="text-xs text-white/50 font-bold">No nominees match the current filter.</p>
+                      <p className="text-[10px] text-white/40 mt-1">Try selecting a different tab or filter.</p>
                     </div>
-                  )}
+                    ) : null;
+                  })()}
                 </div>
               </div>
             </div>
@@ -1190,79 +1427,201 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Categories list with vote counts and dynamic progress bars */}
+              {/* Ballot Filters & Controls */}
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    placeholder="Search by nominee name or organization..."
+                    value={ballotSearch}
+                    onChange={(e) => setBallotSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative flex-1 min-w-[140px]">
+                    <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <select
+                      value={ballotCategoryFilter}
+                      onChange={(e) => setBallotCategoryFilter(e.target.value)}
+                      className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                    >
+                      <option value="all">All Categories</option>
+                      {categories.map(c => <option key={c.id} value={c.id.toString()}>{c.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                  </div>
+                  <div className="relative flex-1 min-w-[160px]">
+                    <ArrowUpDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <select
+                      value={ballotSortBy}
+                      onChange={(e) => setBallotSortBy(e.target.value as any)}
+                      className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                    >
+                      <option value="category">Group by Category</option>
+                      <option value="votes-desc">Highest Votes</option>
+                      <option value="votes-asc">Lowest Votes</option>
+                      <option value="name">Name (A-Z)</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Categories / Flat list with vote counts and dynamic progress bars */}
               <div className="space-y-6 max-h-[500px] overflow-y-auto pr-2">
-                {categories.map((cat) => {
-                  const categoryNominees = nominees.filter((n) => n.categoryId === cat.id);
-                  const totalCatVotes = categoryNominees.reduce((sum, n) => sum + n.votes, 0);
+                {(() => {
+                  let filtered = nominees;
+                  if (ballotSearch.trim()) {
+                    const q = ballotSearch.toLowerCase();
+                    filtered = filtered.filter(n => n.name.toLowerCase().includes(q) || (n.organization && n.organization.toLowerCase().includes(q)));
+                  }
+                  if (ballotCategoryFilter !== "all") {
+                    const catId = parseInt(ballotCategoryFilter, 10);
+                    filtered = filtered.filter(n => n.categoryId === catId);
+                  }
 
-                  return (
-                    <div key={cat.id} className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-4">
-                      {/* Header with category info */}
-                      <div className="flex justify-between items-center gap-3 border-b border-white/5 pb-2">
-                        <div>
-                          <span className="text-[10px] text-amber-400 font-mono font-bold uppercase tracking-wider block">CATEGORY {cat.id}</span>
-                          <strong className="text-xs text-white block">{cat.name}</strong>
-                        </div>
-                        <span className="bg-white/5 text-white/80 border border-white/10 px-2.5 py-1 rounded-lg text-[10px] font-mono">
-                          {totalCatVotes.toLocaleString()} total votes
-                        </span>
-                      </div>
-
-                      {/* Nominees list */}
-                      <div className="space-y-3">
-                        {categoryNominees.length === 0 ? (
-                          <p className="text-[10px] text-white/30 italic text-center py-2">No nominees present in this category.</p>
-                        ) : (
-                          categoryNominees.map((nom) => {
-                            const percent = totalCatVotes > 0 ? (nom.votes / totalCatVotes) * 100 : 0;
-                            return (
-                              <div key={nom.id} className="space-y-1">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-white/80 font-medium">
-                                    {nom.name}
-                                    {nom.organization && (
-                                      <span className="text-[10px] text-white/40 block font-light">{nom.organization}</span>
-                                    )}
-                                  </span>
-                                  <div className="flex items-center gap-3">
-                                    <span className="font-mono font-bold text-amber-400">{nom.votes} <span className="text-[10px] text-white/40">({percent.toFixed(1)}%)</span></span>
-                                    
-                                    {/* Action button to inject votes */}
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 10)}
-                                        className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
-                                        title="Add 10 Votes"
-                                      >
-                                        +10
-                                      </button>
-                                      <button
-                                        onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 50)}
-                                        className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
-                                        title="Add 50 Votes"
-                                      >
-                                        +50
-                                      </button>
+                  if (ballotSortBy === "category") {
+                    const displayCategories = ballotCategoryFilter === "all" ? categories : categories.filter(c => c.id === parseInt(ballotCategoryFilter, 10));
+                    return displayCategories.map((cat) => {
+                      const categoryNominees = filtered.filter((n) => n.categoryId === cat.id).sort((a,b) => b.votes - a.votes);
+                      if (categoryNominees.length === 0 && ballotSearch.trim() !== "") return null;
+                      
+                      const totalCatVotes = nominees.filter((n) => n.categoryId === cat.id).reduce((sum, n) => sum + n.votes, 0);
+                      
+                      return (
+                        <div key={cat.id} className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-4">
+                          {/* Header with category info */}
+                          <div className="flex justify-between items-center gap-3 border-b border-white/5 pb-2">
+                            <div>
+                              <span className="text-[10px] text-amber-400 font-mono font-bold uppercase tracking-wider block">CATEGORY {cat.id}</span>
+                              <strong className="text-xs text-white block">{cat.name}</strong>
+                            </div>
+                            <span className="bg-white/5 text-white/80 border border-white/10 px-2.5 py-1 rounded-lg text-[10px] font-mono">
+                              {totalCatVotes.toLocaleString()} total votes
+                            </span>
+                          </div>
+                          {/* Nominees list */}
+                          <div className="space-y-3">
+                            {categoryNominees.length === 0 ? (
+                              <p className="text-[10px] text-white/30 italic text-center py-2">No nominees present in this category.</p>
+                            ) : (
+                              categoryNominees.map((nom) => {
+                                const percent = totalCatVotes > 0 ? (nom.votes / totalCatVotes) * 100 : 0;
+                                return (
+                                  <div key={nom.id} className="space-y-1">
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-white/80 font-medium">
+                                        {nom.name}
+                                        {nom.organization && (
+                                          <span className="text-[10px] text-white/40 block font-light">{nom.organization}</span>
+                                        )}
+                                      </span>
+                                      <div className="flex items-center gap-3">
+                                        <span className="font-mono font-bold text-amber-400">{nom.votes} <span className="text-[10px] text-white/40">({percent.toFixed(1)}%)</span></span>
+                                        {/* Action button to inject votes */}
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 10)}
+                                            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
+                                            title="Add 10 Votes"
+                                          >
+                                            +10
+                                          </button>
+                                          <button
+                                            onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 50)}
+                                            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
+                                            title="Add 50 Votes"
+                                          >
+                                            +50
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden relative border border-white/5">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-500"
+                                        style={{ width: `${percent}%` }}
+                                      ></div>
                                     </div>
                                   </div>
-                                </div>
-
-                                {/* Custom HTML Progress bar */}
-                                <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden relative border border-white/5">
-                                  <div 
-                                    className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-500"
-                                    style={{ width: `${percent}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  } else {
+                    let sorted = [...filtered];
+                    if (ballotSortBy === "votes-desc") sorted.sort((a,b) => b.votes - a.votes);
+                    if (ballotSortBy === "votes-asc") sorted.sort((a,b) => a.votes - b.votes);
+                    if (ballotSortBy === "name") sorted.sort((a,b) => a.name.localeCompare(b.name));
+                    
+                    return (
+                      <div className="bg-black/30 border border-white/5 rounded-xl p-4 space-y-4">
+                        <div className="flex justify-between items-center gap-3 border-b border-white/5 pb-2">
+                          <strong className="text-xs text-white block">All Filtered Nominees</strong>
+                          <span className="bg-white/5 text-white/80 border border-white/10 px-2.5 py-1 rounded-lg text-[10px] font-mono">
+                            {sorted.length} nominees
+                          </span>
+                        </div>
+                        <div className="space-y-4">
+                          {sorted.length === 0 ? (
+                             <p className="text-[10px] text-white/30 italic text-center py-2">No nominees match the current filters.</p>
+                          ) : (
+                            sorted.map((nom) => {
+                               const cat = categories.find(c => c.id === nom.categoryId);
+                               const totalCatVotes = nominees.filter((n) => n.categoryId === nom.categoryId).reduce((sum, n) => sum + n.votes, 0);
+                               const percent = totalCatVotes > 0 ? (nom.votes / totalCatVotes) * 100 : 0;
+                               return (
+                                  <div key={nom.id} className="space-y-1.5 border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                                    <div className="flex justify-between items-start text-xs">
+                                      <div>
+                                        <span className="text-white/80 font-medium">
+                                          {nom.name}
+                                          {nom.organization && (
+                                            <span className="text-[10px] text-white/40 block font-light">{nom.organization}</span>
+                                          )}
+                                        </span>
+                                        {cat && <span className="text-[9px] text-amber-400 font-mono block mt-1 uppercase">Category {cat.id}: {cat.name}</span>}
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1.5">
+                                        <span className="font-mono font-bold text-amber-400">{nom.votes.toLocaleString()} <span className="text-[10px] text-white/40">({percent.toFixed(1)}%)</span></span>
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 10)}
+                                            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
+                                            title="Add 10 Votes"
+                                          >
+                                            +10
+                                          </button>
+                                          <button
+                                            onClick={() => onUpdateNomineeVotes(nom.id, nom.votes + 50)}
+                                            className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white px-2 py-1 rounded text-[10px] cursor-pointer transition-colors"
+                                            title="Add 50 Votes"
+                                          >
+                                            +50
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden relative border border-white/5">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-500"
+                                        style={{ width: `${percent}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                               );
+                            })
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  }
+                })()}
               </div>
             </div>
           )}
@@ -1478,6 +1837,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+
+                <div className="pt-4 border-t border-white/5 space-y-2">
+                  <label className="text-xs font-bold text-white block">
+                    Live Results & Gala Page Visibility
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formResultsVisible}
+                      onChange={(e) => setFormResultsVisible(e.target.checked)}
+                      className="w-4 h-4 text-amber-400 bg-white/5 border-white/20 rounded focus:ring-amber-400 focus:ring-offset-gray-900"
+                    />
+                    <span className="text-sm text-white/80">Make "Live Results & Gala" public for all users</span>
+                  </label>
+                  <p className="text-[10px] text-white/40 pl-7">
+                    When unchecked, only administrators can see the Live Results & Gala page.
+                  </p>
+                </div>
+
                 <div className="pt-4 border-t border-white/5 flex flex-wrap gap-3">
                   <button
                     type="submit"
@@ -1497,6 +1875,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setFormVotingStart("2026-07-31T00:00");
                         setFormVotingEnd("2026-08-25T23:59");
                         setFormCeremony("2026-09-05T18:00");
+                        setFormResultsVisible(false);
                         onUpdateTimelineSettings({
                           announcementStart: "2026-07-03T00:00:00",
                           announcementEnd: "2026-07-09T23:59:59",
@@ -1505,6 +1884,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           votingStart: "2026-07-31T00:00:00",
                           votingEnd: "2026-08-25T23:59:59",
                           ceremony: "2026-09-05T18:00:00",
+                          resultsVisible: false,
                         });
                         setSuccessMessage("Schedule restored to original defaults.");
                         setTimeout(() => setSuccessMessage(""), 4000);
@@ -1582,6 +1962,183 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         </div>
       </div>
+
+      
+
+              
+      {/* Nominee Modal */}
+      {isNomineeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                {editingNomineeId ? <RefreshCw size={18} className="text-amber-400" /> : <Plus size={18} className="text-amber-400" />}
+                <span>{editingNomineeId ? "Edit Nominee" : "Create Nominee"}</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setIsNomineeModalOpen(false);
+                  setEditingNomineeId(null);
+                }}
+                className="p-2 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              {newNomineeSuccess && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl flex items-center gap-2.5 mb-6 animate-fade-in">
+                  <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                  <span>{newNomineeSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={(e) => {
+                handleCreateNominee(e);
+                if (editingNomineeId) {
+                  setIsNomineeModalOpen(false);
+                }
+              }} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Target List */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-white block">
+                      Add to List
+                    </label>
+                    <select
+                      value={newNomineeListType}
+                      onChange={(e) => setNewNomineeListType(e.target.value as "final" | "approved")}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-colors"
+                    >
+                      <option value="final">Final List (Voting Center)</option>
+                      <option value="approved">Approved Nominations</option>
+                    </select>
+                  </div>
+                  
+                  {/* Category */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-white block">
+                      Award Category
+                    </label>
+                    <select
+                      value={newNomineeCategory}
+                      onChange={(e) => setNewNomineeCategory(Number(e.target.value))}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all cursor-pointer"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id} className="bg-[#121212]">
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Name */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-white block">
+                      Nominee Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newNomineeName}
+                      onChange={(e) => setNewNomineeName(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                      required
+                    />
+                  </div>
+
+                  {/* Picture */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-white block">
+                      Picture (Optional)
+                    </label>
+                    <div className="flex gap-4 items-center">
+                      {newNomineePicture && (
+                        <img src={newNomineePicture} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement("canvas");
+                                const MAX_WIDTH = 400;
+                                const MAX_HEIGHT = 400;
+                                let width = img.width;
+                                let height = img.height;
+                                
+                                if (width > height) {
+                                  if (width > MAX_WIDTH) {
+                                    height = Math.round((height * MAX_WIDTH) / width);
+                                    width = MAX_WIDTH;
+                                  }
+                                } else {
+                                  if (height > MAX_HEIGHT) {
+                                    width = Math.round((width * MAX_HEIGHT) / height);
+                                    height = MAX_HEIGHT;
+                                  }
+                                }
+                                
+                                canvas.width = width;
+                                canvas.height = height;
+                                const ctx = canvas.getContext("2d");
+                                ctx?.drawImage(img, 0, 0, width, height);
+                                setNewNomineePicture(canvas.toDataURL("image/webp", 0.8));
+                              };
+                              img.src = reader.result as string;
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all file:bg-amber-400 file:text-black file:border-0 file:px-3 file:py-1 file:rounded-lg file:mr-4 file:font-bold file:text-xs file:cursor-pointer hover:file:bg-amber-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Description */}
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-xs font-bold text-white block">
+                      Description / Organization (Optional)
+                    </label>
+                    <textarea
+                      value={newNomineeDesc}
+                      onChange={(e) => setNewNomineeDesc(e.target.value)}
+                      rows={2}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/5 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNomineeModalOpen(false);
+                      setEditingNomineeId(null);
+                    }}
+                    className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-amber-400 hover:bg-amber-500 text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer shadow-md shadow-amber-400/10 flex items-center gap-2"
+                  >
+                    {editingNomineeId ? <RefreshCw size={14} /> : <Plus size={14} />}
+                    {editingNomineeId ? "Update Nominee" : "Add Nominee"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {nominationToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

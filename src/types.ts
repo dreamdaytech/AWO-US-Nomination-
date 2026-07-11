@@ -25,13 +25,14 @@ export interface Nominee {
   avatarUrl?: string;
   votes: number;
   organization?: string;
+  listType?: "final" | "approved";
 }
 
 export interface NominationInput {
   categoryId: number;
   nomineeName: string;
   nomineeContact: string;
-  nomineeEmail: string;
+  nomineeEmail?: string;
   nomineeFacebook?: string;
   nomineeTwitter?: string;
   nomineeLinkedIn?: string;
@@ -43,7 +44,28 @@ export interface NominationInput {
 export interface Nomination extends NominationInput {
   id: string;
   submittedAt: string;
-  approved: boolean; // Approved for the voting pool
+  approved: boolean;
+  declined?: boolean;
+  votes?: number; // Approved for the voting pool
+  groupId?: string;
+}
+
+export interface NomineeGroup {
+  id: string;
+  categoryId: number;
+  name: string;
+  description: string;
+  nominationIds: string[];
+  approved: boolean;
+}
+
+export interface GroupingAuditLog {
+  id: string;
+  adminEmail: string;
+  action: "CREATE" | "ADD" | "REMOVE" | "APPROVE_GROUP" | "REJECT_GROUP";
+  groupId: string;
+  nominationId?: string;
+  timestamp: string;
 }
 
 export interface UserVote {
@@ -59,6 +81,7 @@ export interface TimelineSettings {
   votingStart: string;
   votingEnd: string;
   ceremony: string;
+  resultsVisible?: boolean;
 }
 
 export interface Message {

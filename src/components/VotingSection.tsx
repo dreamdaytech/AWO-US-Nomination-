@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from "react";
-import { Category, Nominee, UserVote, SystemPhase, TimelineSettings } from "../types";
+import { Category, Nominee, UserVote, SystemPhase, TimelineSettings, NomineeGroup } from "../types";
 import { CategoryIcon } from "./CategoryIcon";
 import { Check, Vote, AlertTriangle, ShieldCheck, Lock, Award, Heart, Search, Filter, SlidersHorizontal, Share2, Twitter, Facebook } from "lucide-react";
 import { formatDateTime, parseLocalDateTime } from "../utils";
@@ -18,6 +18,9 @@ interface VotingSectionProps {
   timelineSettings?: TimelineSettings;
   simulatedDate?: Date;
   onNavigateToResults?: () => void;
+  onNavigateToNominate?: () => void;
+  isAdminLoggedIn?: boolean;
+  nomineeGroups?: NomineeGroup[];
 }
 
 export const VotingSection: React.FC<VotingSectionProps> = ({
@@ -29,16 +32,49 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   timelineSettings,
   simulatedDate,
   onNavigateToResults,
+  onNavigateToNominate,
+  nomineeGroups,
+  isAdminLoggedIn,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all"); // "all", or a category ID
   const [statusFilter, setStatusFilter] = useState<"all" | "voted" | "pending">("all");
   const [selectedNominee, setSelectedNominee] = useState<Nominee | null>(null);
+  const [justVotedId, setJustVotedId] = useState<string | null>(null);
+  const [voteConfirmation, setVoteConfirmation] = useState<{ categoryId: number; nomineeId: string; nomineeName: string; categoryName: string } | null>(null);
+
+
+  
+  const approvedGroups = (nomineeGroups || []).filter(g => g.approved);
+  const groupedNominationIds = new Set(approvedGroups.flatMap(g => g.nominationIds));
+  
+  // Exclude individual nominees that are part of an approved group
+  const filteredGroupedNominees = nominees.filter(n => {
+    if (n.id.startsWith('custom-nom-')) {
+      const nomId = n.id.replace('custom-nom-', '');
+      if (groupedNominationIds.has(nomId)) return false;
+    }
+    return true;
+  });
+
+  const allNominees = [
+    ...filteredGroupedNominees,
+    ...approvedGroups.map(g => ({
+      id: g.id,
+      categoryId: g.categoryId,
+      name: g.name,
+      description: g.description,
+      votes: g.votes || 0,
+      organization: `Supported by ${g.nominationIds.length} nominations`
+    } as Nominee))
+  ];
+
 
   // Group nominees by category
   const getNomineesForCategory = (catId: number) => {
-    return nominees.filter((n) => n.categoryId === catId);
+    return allNominees.filter((n) => n.categoryId === catId);
   };
+
 
   const getVoteForCategory = (catId: number) => {
     return userVotes.find((uv) => uv.categoryId === catId);
@@ -119,10 +155,52 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
 
   const isBeforeVoting = nowTime < votingStart;
   const isAfterVoting = nowTime > votingEnd;
-  const isVotingClosed = isBeforeVoting || isAfterVoting || currentPhase === SystemPhase.RESULTS;
+  const isVotingClosed = isAdminLoggedIn ? false : (isBeforeVoting || isAfterVoting || currentPhase === SystemPhase.RESULTS);
 
   return (
     <div className="space-y-8 animate-fade-in" id="voting-system-container">
+      {(!isAdminLoggedIn && isBeforeVoting) ? (
+        <div className="w-full bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8 sm:p-12 shadow-2xl text-center space-y-6">
+          <div className="mx-auto w-16 h-16 bg-amber-400/10 rounded-full flex items-center justify-center border border-amber-400/20 mb-4">
+            <Lock className="text-amber-400" size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">Voting Period Has Not Started</h2>
+          <div className="text-white/70 max-w-2xl mx-auto leading-relaxed space-y-4 text-sm">
+            <p>Thank you for your interest in the AWOL AMERICA 10th Annual Achievement Awards.</p>
+            <p>
+              The final list of approved nominees is currently being prepared and reviewed by the AWOL AMERICA management team. The official <strong className="text-amber-400">Voting Center will open on {formatDateTime(settings.votingStart)}</strong>, when community members will be able to view the nominees and vote for their favorite candidates.
+            </p>
+            <p>
+              If you would like to recognize an outstanding individual, organization, or initiative, you can still submit a nomination by visiting our Nomination Page:
+            </p>
+            <div className="pt-2 pb-4">
+              <button
+                onClick={onNavigateToNominate}
+                className="bg-amber-400 hover:bg-amber-300 text-black px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-400/20"
+              >
+                Go to Nomination Page
+              </button>
+            </div>
+            <p>
+              Please check back on the voting opening date to participate in celebrating the achievements and contributions of our nominees.
+            </p>
+            <p className="font-medium text-white/90">
+              Thank you for your continued support of AWOL AMERICA.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {isAdminLoggedIn && isBeforeVoting && (
+            <div className="bg-amber-400/10 border border-amber-400/30 rounded-xl p-4 flex items-center justify-center gap-3 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.1)]">
+              <ShieldCheck size={18} />
+              <p className="text-xs font-bold tracking-wide">
+                <span className="uppercase mr-2 font-mono">Admin Testing Mode:</span>
+                You are viewing the Voting Center before it is officially open to the public.
+              </p>
+            </div>
+          )}
+
       {/* Search & Filter Header Container */}
       <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 sm:p-6 shadow-2xl z-10 relative">
         <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
@@ -249,7 +327,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                           className={`group/card relative border rounded-xl p-5 flex flex-col justify-between items-center text-center gap-4 transition-all ${
                             isVotingClosed ? "cursor-default" : "cursor-pointer"
                           } ${
-                            isSelected
+                            justVotedId === nom.id
+                              ? "bg-amber-400/10 border-amber-400 scale-[1.02] shadow-[0_0_30px_rgba(251,191,36,0.3)] z-10"
+                              : isSelected
                               ? "bg-amber-400/5 border-amber-400/40 shadow-md"
                               : isVotingClosed
                               ? "bg-white/5 border-white/5 opacity-60"
@@ -275,7 +355,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                               )}
                               <div className={`absolute -bottom-2 -right-2 w-8 h-8 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${
                                 isSelected
-                                  ? "border-amber-400 bg-amber-400 text-black shadow-[0_0_15px_rgba(251,191,36,0.5)] scale-110"
+                                  ? justVotedId === nom.id
+                                    ? "border-amber-400 bg-amber-400 text-black shadow-[0_0_25px_rgba(251,191,36,0.8)] scale-[1.3] animate-pulse"
+                                    : "border-amber-400 bg-amber-400 text-black shadow-[0_0_15px_rgba(251,191,36,0.5)] scale-110"
                                   : isVotingClosed
                                   ? "border-[#111318] bg-white/5 opacity-0"
                                   : "border-[#111318] bg-white/10 group-hover/card:bg-white/20 opacity-0 group-hover/card:opacity-100"
@@ -311,7 +393,12 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isVotingClosed) return;
-                                onCastVote(category.id, nom.id);
+                                setVoteConfirmation({
+                                  categoryId: category.id,
+                                  nomineeId: nom.id,
+                                  nomineeName: nom.name,
+                                  categoryName: category.name
+                                });
                               }}
                               className={`w-full text-[11px] font-bold py-2.5 px-3 rounded-lg border transition-all ${
                                 isVotingClosed
@@ -453,6 +540,58 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                   className="px-5 py-2 text-xs font-bold text-black bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer w-full sm:w-auto"
                 >
                   Close Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+        </>
+      )}
+
+      {/* Vote Confirmation Modal */}
+      {voteConfirmation && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#111318] border border-white/10 rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-gradient-to-tr from-amber-400 to-amber-600 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(251,191,36,0.3)]">
+              <Vote className="text-black" size={28} />
+            </div>
+            
+            <div className="mt-8 text-center space-y-4">
+              <h3 className="text-xl font-black text-white">Confirm Your Vote</h3>
+              
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/40 block mb-1">Category</span>
+                  <p className="text-amber-400 font-bold text-sm">{voteConfirmation.categoryName}</p>
+                </div>
+                <div className="border-t border-white/10 pt-3">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/40 block mb-1">Nominee</span>
+                  <p className="text-white font-bold">{voteConfirmation.nomineeName}</p>
+                </div>
+              </div>
+              
+              <p className="text-xs text-white/50 leading-relaxed">
+                Are you sure you want to cast your vote for this nominee? You can change your vote later before the voting period ends.
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3 pt-4">
+                <button
+                  onClick={() => setVoteConfirmation(null)}
+                  className="px-4 py-3 rounded-xl border border-white/10 text-white hover:bg-white/5 font-bold text-sm transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    onCastVote(voteConfirmation.categoryId, voteConfirmation.nomineeId);
+                    setJustVotedId(voteConfirmation.nomineeId);
+                    setTimeout(() => setJustVotedId(null), 600);
+                    setVoteConfirmation(null);
+                  }}
+                  className="px-4 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-600 text-black font-black text-sm transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer"
+                >
+                  Confirm Vote
                 </button>
               </div>
             </div>

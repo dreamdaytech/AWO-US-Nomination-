@@ -13,7 +13,7 @@ import { VotingSection } from "./components/VotingSection";
 import { ResultsSection } from "./components/ResultsSection";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { CATEGORIES, INITIAL_NOMINEES, CONTACT_INFO } from "./data";
-import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings } from "./types";
+import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog } from "./types";
 import { parseLocalDateTime } from "./utils";
 import { dbService } from "./dbService";
 import { 
@@ -73,6 +73,8 @@ export default function App() {
   const [guestbookMessages, setGuestbookMessages] = useState<Message[]>([]);
 
   const [selectedCategoryIdForForm, setSelectedCategoryIdForForm] = useState<number>(0);
+  const [nomineeGroups, setNomineeGroups] = useState<NomineeGroup[]>([]);
+  const [groupingAuditLogs, setGroupingAuditLogs] = useState<GroupingAuditLog[]>([]);
 
   // Setup Firestore listeners
   useEffect(() => {
@@ -112,6 +114,8 @@ export default function App() {
       });
       setNominees(combined);
     });
+    const unsubGroups = dbService.listenToNomineeGroups(setNomineeGroups);
+    const unsubLogs = dbService.listenToGroupingAuditLogs(setGroupingAuditLogs);
 
     return () => {
       unsubSettings();
@@ -120,6 +124,8 @@ export default function App() {
       unsubNoms();
       unsubMessages();
       unsubNominees();
+      unsubGroups();
+      unsubLogs();
     };
   }, []);
 
@@ -176,7 +182,7 @@ export default function App() {
   const handleToggleApproveNomination = async (nominationId: string) => {
     const nom = nominations.find(n => n.id === nominationId);
     if (nom) {
-      await dbService.updateNomination(nominationId, { approved: !nom.approved });
+      await dbService.updateNomination(nominationId, { approved: !nom.approved, declined: false });
       // If approved, create/update nominee dynamically
       if (!nom.approved) {
         await dbService.setNominee({
@@ -192,6 +198,14 @@ export default function App() {
   };
 
   // Cast a vote for a candidate in a category
+
+  const handleDeclineNomination = async (nominationId: string) => {
+    const nom = nominations.find(n => n.id === nominationId);
+    if (nom) {
+      await dbService.updateNomination(nominationId, { approved: false, declined: true });
+    }
+  };
+
   const handleCastVote = async (categoryId: number, nomineeId: string) => {
     // Record vote in user's browser ballot
     setUserVotes((prev) => {
@@ -201,11 +215,7 @@ export default function App() {
 
     const nom = nominees.find(n => n.id === nomineeId);
     if (nom) {
-      // Create it in db if it's static and not in db yet, or just update votes
-      await dbService.setNominee({
-        ...nom,
-        votes: nom.votes + 1
-      });
+      await dbService.incrementNomineeVotes(nom.id, 1);
     }
   };
 
@@ -249,10 +259,8 @@ export default function App() {
   const handleUpdateNomineeVotes = async (nomineeId: string, votes: number) => {
     const nom = nominees.find(n => n.id === nomineeId);
     if (nom) {
-      await dbService.setNominee({
-        ...nom,
-        votes
-      });
+      const delta = votes - nom.votes;
+      await dbService.incrementNomineeVotes(nom.id, delta);
     }
   };
 
@@ -299,7 +307,7 @@ export default function App() {
     <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))] flex flex-col font-sans antialiased text-white relative overflow-hidden" id="main-application-root">
       
       {/* HEADER & BRANDING BRAND BANNER */}
-      <Header 
+      <Header isAdminLoggedIn={isAdminLoggedIn} 
         currentPhase={phase} 
         phaseLabel={phaseLabel} 
         activeTab={activeTab} 
@@ -378,13 +386,16 @@ export default function App() {
           <div className="animate-fade-in" id="vote-tab-content">
             <VotingSection
               categories={CATEGORIES}
-              nominees={nominees}
+              nominees={nominees.filter(n => n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-")))}
+              nomineeGroups={nomineeGroups}
               userVotes={userVotes}
               onCastVote={handleCastVote}
               currentPhase={phase}
               timelineSettings={timelineSettings}
               simulatedDate={simulatedDate}
               onNavigateToResults={() => setActiveTab("results")}
+              onNavigateToNominate={() => setActiveTab("nominate")}
+              isAdminLoggedIn={isAdminLoggedIn}
             />
           </div>
         )}
@@ -392,14 +403,26 @@ export default function App() {
         {/* TAB 4: RESULTS SECTION */}
         {activeTab === "results" && (
           <div className="animate-fade-in" id="results-tab-content">
+            {(!isAdminLoggedIn && !timelineSettings?.resultsVisible) ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                  <Trophy size={32} className="text-white/40" />
+                </div>
+                <h2 className="text-2xl font-black text-white mb-3">Results Currently Hidden</h2>
+                <p className="text-white/60 max-w-md font-light text-sm">
+                  The Live Results & Gala page is not currently visible to the public. Please check back later.
+                </p>
+              </div>
+            ) : (
             <ResultsSection
               categories={CATEGORIES}
-              nominees={nominees}
+              nominees={nominees.filter(n => n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-")))}
               guestbookMessages={guestbookMessages}
               onAddMessage={handleAddMessage}
               currentPhase={phase}
               timelineSettings={timelineSettings}
             />
+            )}
           </div>
         )}
 
@@ -461,6 +484,12 @@ export default function App() {
               nominees={nominees}
               nominations={nominations}
               guestbookMessages={guestbookMessages}
+              nomineeGroups={nomineeGroups}
+              groupingAuditLogs={groupingAuditLogs}
+              onCreateNomineeGroup={async (g) => { const docRef = await dbService.addNomineeGroup(g); return docRef.id; }}
+              onUpdateNomineeGroup={async (id, data) => await dbService.updateNomineeGroup(id, data)}
+              onDeleteNomineeGroup={async (id) => await dbService.deleteNomineeGroup(id)}
+              onAddGroupingAuditLog={async (log) => await dbService.addGroupingAuditLog(log)}
               simulatedDate={simulatedDate}
               currentPhase={phase}
               phaseLabel={phaseLabel}
@@ -468,6 +497,7 @@ export default function App() {
               onUpdateTimelineSettings={handleUpdateSettings}
               onSetSimulatedDate={handleUpdateSimulatedDate}
               onToggleApproveNomination={handleToggleApproveNomination}
+              onDeclineNomination={handleDeclineNomination}
               onDeleteNomination={handleDeleteNomination}
               onUpdateNomineeVotes={handleUpdateNomineeVotes}
               onDeleteMessage={handleDeleteMessage}

@@ -34,7 +34,7 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const getNomineesForCategory = (catId: number) => {
-    return nominees.filter((n) => n.categoryId === catId);
+    return nominees.filter((n) => n.categoryId === catId).sort((a, b) => b.votes - a.votes);
   };
 
   // Find leader/winner for a category
@@ -86,14 +86,14 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({
       {currentPhase !== SystemPhase.RESULTS && (
         <div 
           className="p-4.5 bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl flex items-start gap-3 text-sm text-white/80 shadow-xl"
-          id="results-sandbox-notice"
+          id="results-notice"
         >
           <Sparkles className="text-amber-400 shrink-0 mt-0.5" size={18} />
           <div>
-            <strong className="font-bold text-white block">Results Phase Simulation Notice</strong>
+            <strong className="font-bold text-white block">Results Preview Notice</strong>
             The official results will be locked and hidden until the ceremony on{" "}
             <strong className="text-amber-400 font-bold">{timelineSettings ? formatDateTime(timelineSettings.ceremony) : "Saturday, September 5, 2026"}</strong>. 
-            However, we have unlocked these live results for your testing! Swap the active date using the simulator toolbar or cast votes in other categories to see these metrics adjust instantly.
+            However, administrators can view the live standings here before the official announcement.
           </div>
         </div>
       )}

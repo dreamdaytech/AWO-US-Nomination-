@@ -6,7 +6,7 @@
 import React, { useState } from "react";
 import { Category, NominationInput, Nomination, SystemPhase, TimelineSettings } from "../types";
 import { CONTACT_INFO } from "../data";
-import { Check, AlertCircle, Sparkles, Send, HelpCircle, Share2, Twitter, Facebook, Linkedin, Copy, Lock, Vote, Clock } from "lucide-react";
+import { Check, AlertCircle, Sparkles, Send, HelpCircle, Share2, Twitter, Facebook, Linkedin, Copy, Lock, Vote, Clock, MessageCircle } from "lucide-react";
 import { formatDateTime, parseLocalDateTime } from "../utils";
 
 interface NominationFormProps {
@@ -133,13 +133,13 @@ export const NominationForm: React.FC<NominationFormProps> = ({
     <div className="space-y-8" id="nomination-form-tab-container">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Interactive Sandbox Form */}
-        <div className="lg:col-span-7 bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 sm:p-8 shadow-2xl" id="nomination-sandbox-form-box">
+        <div className="lg:col-span-7 bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 sm:p-8 shadow-2xl" id="nomination-form-box">
           <div className="mb-6">
             <h3 className="font-sans font-extrabold text-white text-lg tracking-tight">
-              Submit a Nomination (Simulator Portal)
+              Submit a Nomination
             </h3>
-            <p className="text-xs text-white/50 mt-1">
-              Add custom nominees to play with the voting and metrics features in real time.
+            <p className="text-xs text-white/50 mt-1 leading-relaxed">
+              Please submit an official nomination for the upcoming AWOL AMERICA awards. Nominations can be made by fellow members, the public, or through self-nomination. To propose a deserving candidate for any of the categories listed, kindly complete the nomination form below. In your submission, please explain your reasons for the nomination and highlight the nominee's achievements, dedication, and commitment to fostering a better world.
             </p>
           </div>
 
@@ -174,23 +174,96 @@ export const NominationForm: React.FC<NominationFormProps> = ({
           )}
 
           {submitted ? (
-            <div className="mb-6 p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 text-sm flex flex-col items-center justify-center text-center gap-4 animate-fade-in" id="nomination-success-msg">
-              <div className="w-14 h-14 bg-emerald-500/20 rounded-full flex items-center justify-center">
-                <Check className="text-emerald-400" size={28} />
+            <div className="mb-6 p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-400 flex flex-col items-center justify-center text-center animate-fade-in" id="nomination-success-msg">
+              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                <Check className="text-emerald-400" size={32} />
               </div>
-              <div>
-                <strong className="font-bold block text-white text-lg mb-1">Nomination Received Successfully!</strong>
-                <p className="text-white/70 text-xs max-w-sm mx-auto leading-relaxed mt-2">
-                  Your nomination has been saved to the sandbox. To let public users vote on it, check the "Sandbox Management Panel" below and click "Approve".
+              
+              <div className="space-y-4 max-w-lg mx-auto mb-8">
+                <strong className="font-extrabold block text-white text-2xl tracking-tight mb-2">Nomination Submitted Successfully!</strong>
+                
+                <p className="text-white/80 text-sm leading-relaxed">
+                  Thank you for submitting your nomination.
+                </p>
+                <p className="text-white/80 text-sm leading-relaxed">
+                  Your nomination has been received and saved successfully. Before it becomes available for public voting, it will be reviewed and approved by the AWOL AMERICA management team.
+                </p>
+                <p className="text-white/80 text-sm leading-relaxed">
+                  Once approved, the nomination will be published and made available for public voting during the official voting period.
+                </p>
+                <p className="text-white/80 text-sm leading-relaxed">
+                  Thank you for helping us recognize individuals and organizations making a positive impact in our communities.
                 </p>
               </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-xl p-6 w-full max-w-lg mb-6">
+                <h4 className="text-base font-bold text-white mb-2">Promote the Awards</h4>
+                <p className="text-sm text-white/60 mb-5 leading-relaxed">
+                  Spread the word and invite your network to nominate their community heroes for the 10th Annual AWOL America Achievement Awards!
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <button
+                    onClick={() => {
+                      const url = window.location.href;
+                      const text = "Nominate your community heroes for the 10th Annual AWOL America Achievement Awards!";
+                      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, "_blank");
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-[#1da1f2]/10 hover:bg-[#1da1f2]/20 border border-[#1da1f2]/20 text-[#1da1f2] font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <Twitter size={14} />
+                    <span>Share on X</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url = window.location.href;
+                      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank");
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-[#1877f2]/10 hover:bg-[#1877f2]/20 border border-[#1877f2]/20 text-[#1877f2] font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <Facebook size={14} />
+                    <span>Facebook</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url = window.location.href;
+                      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, "_blank");
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-[#0077b5]/10 hover:bg-[#0077b5]/20 border border-[#0077b5]/20 text-[#0077b5] font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <Linkedin size={14} />
+                    <span>LinkedIn</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url = window.location.href;
+                      const text = "Nominate your community heroes for the 10th Annual AWOL America Achievement Awards!";
+                      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text + " " + url)}`, "_blank");
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/20 text-[#25D366] font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <MessageCircle size={14} />
+                    <span>WhatsApp</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.href);
+                      alert("Link copied to clipboard!");
+                    }}
+                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    <Copy size={14} />
+                    <span>Copy Link</span>
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
                   setSubmitted(false);
                   setError("");
                 }}
-                className="mt-4 px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl border border-white/10 transition-colors cursor-pointer"
+                className="px-8 py-3.5 bg-white/10 hover:bg-white/20 text-white font-bold text-sm rounded-xl border border-white/10 transition-colors cursor-pointer"
               >
                 Submit Another Nomination
               </button>
@@ -250,7 +323,7 @@ export const NominationForm: React.FC<NominationFormProps> = ({
               </div>
               <div>
                 <label htmlFor="nomineeEmail" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
-                  Nominee Email *
+                  Nominee Email (Optional)
                 </label>
                 <input
                   type="email"
@@ -261,7 +334,6 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                   disabled={isNominationClosed}
                   placeholder={isNominationClosed ? "Nominations closed" : "e.g. sam@example.com"}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:bg-white/10 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all outline-none text-white placeholder-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                  required
                 />
               </div>
             </div>
@@ -496,17 +568,30 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                   <span>Facebook</span>
                 </button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-center gap-2">
                 <button
                   onClick={() => {
                     const url = window.location.href;
                     window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`, "_blank");
                   }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 bg-[#0077b5]/10 hover:bg-[#0077b5]/20 border border-[#0077b5]/20 text-[#0077b5] font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 bg-[#0077b5]/10 hover:bg-[#0077b5]/20 border border-[#0077b5]/20 text-[#0077b5] font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
                   title="Share on LinkedIn"
                 >
                   <Linkedin size={14} />
                   <span>LinkedIn</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const url = window.location.href;
+                    const text = "Nominate your heroes for the 10th Annual AWOL America Achievement Awards! Submit your entries here:";
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text + " " + url)}`, "_blank");
+                  }}
+                  className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 bg-[#25D366]/10 hover:bg-[#25D366]/20 border border-[#25D366]/20 text-[#25D366] font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  title="Share on WhatsApp"
+                >
+                  <MessageCircle size={14} />
+                  <span>WhatsApp</span>
                 </button>
                 
                 <button
@@ -515,7 +600,7 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
+                  className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors cursor-pointer"
                   title="Copy Page Link"
                 >
                   {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}

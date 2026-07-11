@@ -1,0 +1,69 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export enum SystemPhase {
+  PRE_NOMINATION = "PRE_NOMINATION", // Before July 10, 2026
+  NOMINATION = "NOMINATION",         // July 10 - July 30, 2026
+  VOTING = "VOTING",                 // July 31 - August 25, 2026
+  RESULTS = "RESULTS"                // After August 25, 2026
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  description: string;
+  iconName: string;
+}
+
+export interface Nominee {
+  id: string;
+  categoryId: number;
+  name: string;
+  description: string;
+  avatarUrl?: string;
+  votes: number;
+  organization?: string;
+}
+
+export interface NominationInput {
+  categoryId: number;
+  nomineeName: string;
+  nomineeContact: string;
+  nomineeEmail: string;
+  nomineeFacebook?: string;
+  nomineeTwitter?: string;
+  nomineeLinkedIn?: string;
+  rationale: string;
+  nominatorName: string;
+  nominatorEmail: string;
+}
+
+export interface Nomination extends NominationInput {
+  id: string;
+  submittedAt: string;
+  approved: boolean; // Approved for the voting pool
+}
+
+export interface UserVote {
+  categoryId: number;
+  nomineeId: string;
+}
+
+export interface TimelineSettings {
+  announcementStart: string;
+  announcementEnd: string;
+  nominationStart: string;
+  nominationEnd: string;
+  votingStart: string;
+  votingEnd: string;
+  ceremony: string;
+}
+
+export interface Message {
+  id: string;
+  author: string;
+  content: string;
+  createdAt: string;
+}

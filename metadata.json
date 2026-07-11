@@ -1,0 +1,6 @@
+{
+  "name": "AWOL America Awards Portal",
+  "description": "Nomination and voting platform for the AWOL AMERICA 10th Annual Achievement Awards scheduled for Saturday, September 5, 2026.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

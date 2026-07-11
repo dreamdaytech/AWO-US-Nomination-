@@ -1,0 +1,88 @@
+{
+  "rules": {
+    "auth": {
+      "strategy": "anonymous",
+      "roles": {
+        "admin": {
+          "condition": "false",
+          "description": "We will just use unauthenticated read/writes for the demo, or secure via some rules if necessary. Actually, let's allow read/write to all for this simple app, or check auth != null."
+        }
+      }
+    },
+    "collections": {
+      "nominations": {
+        "description": "User submitted nominations",
+        "schema": {
+          "categoryId": "number",
+          "nomineeName": "string",
+          "nomineeContact": "string",
+          "nomineeEmail": "string",
+          "nomineeFacebook": "string?",
+          "nomineeTwitter": "string?",
+          "nomineeLinkedIn": "string?",
+          "rationale": "string",
+          "nominatorName": "string",
+          "nominatorEmail": "string",
+          "submittedAt": "string",
+          "approved": "boolean"
+        },
+        "security": {
+          "read": "true",
+          "create": "true",
+          "update": "true",
+          "delete": "true"
+        }
+      },
+      "nominees": {
+        "description": "Approved nominees",
+        "schema": {
+          "categoryId": "number",
+          "name": "string",
+          "description": "string",
+          "avatarUrl": "string?",
+          "votes": "number",
+          "organization": "string?"
+        },
+        "security": {
+          "read": "true",
+          "create": "true",
+          "update": "true",
+          "delete": "true"
+        }
+      },
+      "messages": {
+        "description": "Guestbook messages",
+        "schema": {
+          "author": "string",
+          "content": "string",
+          "createdAt": "string"
+        },
+        "security": {
+          "read": "true",
+          "create": "true",
+          "update": "true",
+          "delete": "true"
+        }
+      },
+      "settings": {
+        "description": "App settings like timeline",
+        "schema": {
+          "announcementStart": "string?",
+          "announcementEnd": "string?",
+          "nominationStart": "string?",
+          "nominationEnd": "string?",
+          "votingStart": "string?",
+          "votingEnd": "string?",
+          "ceremony": "string?",
+          "simulatedDate": "string?"
+        },
+        "security": {
+          "read": "true",
+          "create": "true",
+          "update": "true",
+          "delete": "true"
+        }
+      }
+    }
+  }
+}

@@ -25,7 +25,10 @@ import {
   Flame,
   Plus,
   LayoutGrid,
-  List
+  List,
+  AlertCircle,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { 
   ResponsiveContainer, 
@@ -37,7 +40,7 @@ import {
   Tooltip,
   Cell
 } from "recharts";
-import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog } from "../types";
+import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser } from "../types";
 import { AdminGroupsTab } from "./AdminGroupsTab";
 import { Users, Search, Filter, ArrowUpDown, ChevronDown, X } from "lucide-react";
 
@@ -80,8 +83,12 @@ interface AdminDashboardProps {
   onAddNominee: (nominee: Nominee) => void;
   onUpdateNominee: (id: string, data: Partial<Nominee>) => void;
   onDeleteNominee: (id: string) => void;
-  adminCreds: {email: string, password: string};
-  onUpdateAdminCreds: (creds: {email: string, password: string}) => void;
+  onLogout: () => void;
+  loggedInAdmin: AdminUser;
+  admins: AdminUser[];
+  onAddAdmin: (admin: Omit<AdminUser, "id" | "createdAt">) => Promise<void>;
+  onUpdateAdmin: (id: string, admin: Partial<AdminUser>) => Promise<void>;
+  onDeleteAdmin: (id: string) => Promise<void>;
   nomineeGroups: NomineeGroup[];
   groupingAuditLogs: GroupingAuditLog[];
   onCreateNomineeGroup: (group: Omit<NomineeGroup, "id">) => Promise<string>;
@@ -111,8 +118,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddNominee,
   onUpdateNominee,
   onDeleteNominee,
-  adminCreds,
-  onUpdateAdminCreds,
+  onLogout,
+  loggedInAdmin,
+  admins,
+  onAddAdmin,
+  onUpdateAdmin,
+  onDeleteAdmin,
   nomineeGroups,
   groupingAuditLogs,
   onCreateNomineeGroup,
@@ -120,7 +131,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteNomineeGroup,
   onAddGroupingAuditLog
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings">("time");
+  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings" | "administrators">("time");
   const [manageNomineesTab, setManageNomineesTab] = useState<"all" | "manual" | "approved">("all");
   const [manageNomineesSearch, setManageNomineesSearch] = useState("");
   const [manageNomineesCategoryFilter, setManageNomineesCategoryFilter] = useState<string>("all");
@@ -138,14 +149,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [formCeremony, setFormCeremony] = useState(timelineSettings.ceremony.slice(0, 16));
   const [formResultsVisible, setFormResultsVisible] = useState(!!timelineSettings.resultsVisible);
 
-  const [formAdminEmail, setFormAdminEmail] = useState(adminCreds.email);
-  const [formAdminPassword, setFormAdminPassword] = useState(adminCreds.password);
-  const [adminCredsSuccess, setAdminCredsSuccess] = useState("");
+  // Administrators Management States
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [editingAdminId, setEditingAdminId] = useState<string | null>(null);
+  const [formAdminName, setFormAdminName] = useState("");
+  const [formAdminEmail, setFormAdminEmail] = useState("");
+  const [formAdminPassword, setFormAdminPassword] = useState("");
+  const [formAdminRole, setFormAdminRole] = useState<"SUPER_ADMIN" | "ADMIN">("ADMIN");
+  const [adminActionError, setAdminActionError] = useState("");
+  const [adminActionSuccess, setAdminActionSuccess] = useState("");
+
+  // Custom Confirmation Modal
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    isDanger: boolean;
+    confirmText: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    isDanger: false,
+    confirmText: "Confirm",
+    onConfirm: () => {}
+  });
+
+  // Profile Edit States
+  const [profileName, setProfileName] = useState(loggedInAdmin.name);
+  const [profilePassword, setProfilePassword] = useState(loggedInAdmin.password || "");
+  const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [showAddAdminPassword, setShowAddAdminPassword] = useState(false);
+  const [showEditAdminPassword, setShowEditAdminPassword] = useState(false);
 
   const [newNomineeName, setNewNomineeName] = useState("");
   const [newNomineeCategory, setNewNomineeCategory] = useState(categories[0]?.id || 1);
   const [newNomineePicture, setNewNomineePicture] = useState("");
   const [newNomineeDesc, setNewNomineeDesc] = useState("");
+  const [newNomineeAchievements, setNewNomineeAchievements] = useState<string[]>([]);
   const [newNomineeListType, setNewNomineeListType] = useState<"final" | "approved">("final");
   const [newNomineeSuccess, setNewNomineeSuccess] = useState("");
   const [editingNomineeId, setEditingNomineeId] = useState<string | null>(null);
@@ -155,6 +197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [successMessage, setSuccessMessage] = useState("");
   const [validationError, setValidationError] = useState("");
   const [nominationToDelete, setNominationToDelete] = useState<string | null>(null);
+  const [nomineeToDelete, setNomineeToDelete] = useState<Nominee | null>(null);
 
 
   // Ballot Filters
@@ -263,8 +306,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleAutoGenerateAchievements = () => {
+    if (!newNomineeDesc) return;
+    const sentences = newNomineeDesc.split(/(?<=\.)\s+/).filter(s => s.length > 10).map(s => s.trim());
+    let generated = sentences.slice(0, 3);
+    if (generated.length === 0) {
+      generated = ["Demonstrated exceptional performance and significant positive impact."];
+    }
+    setNewNomineeAchievements(generated);
+  };
+
   const handleCreateNominee = (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanedAchievements = newNomineeAchievements.filter(a => a.trim().length > 0);
+
     if (editingNomineeId) {
       onUpdateNominee(editingNomineeId, {
         categoryId: newNomineeCategory,
@@ -272,6 +327,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         description: newNomineeDesc || "Added by Admin",
         avatarUrl: newNomineePicture,
         listType: newNomineeListType,
+        achievements: cleanedAchievements,
       });
       setNewNomineeSuccess("Nominee updated successfully!");
     } else {
@@ -282,27 +338,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         description: newNomineeDesc || "Added by Admin",
         avatarUrl: newNomineePicture,
         listType: newNomineeListType,
-        votes: 0
+        votes: 0,
+        achievements: cleanedAchievements,
       });
       setNewNomineeSuccess("Nominee created successfully!");
     }
     setNewNomineeName("");
     setNewNomineePicture("");
     setNewNomineeDesc("");
+    setNewNomineeAchievements([]);
     setEditingNomineeId(null);
     setNewNomineeListType("final");
     setTimeout(() => setNewNomineeSuccess(""), 3000);
   };
 
-  const handleAdminCredsSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateAdminCreds({
-      email: formAdminEmail,
-      password: formAdminPassword
-    });
-    setAdminCredsSuccess("Admin credentials updated successfully!");
-    setTimeout(() => setAdminCredsSuccess(""), 3000);
-  };
+
 
   const handleScheduleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,6 +444,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               Monitor real-time ballot data, approve custom user nominations, moderate guestbook congratulations, and perform phase time-travel simulations.
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-4 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6 mt-4 md:mt-0">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] text-white/50 font-mono tracking-wider uppercase">Logged in as</span>
+            <span className="text-sm font-bold text-emerald-400">{loggedInAdmin.name}</span>
+          </div>
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded-xl border border-red-500/20 transition-colors"
+          >
+            Log Out
+          </button>
         </div>
       </div>
 
@@ -995,8 +1057,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             nominationIds: allIds,
                             approved: true
                           });
-                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
-                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "APPROVE_GROUP", groupId, timestamp: new Date().toISOString() });
+                          await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
+                          await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "APPROVE_GROUP", groupId, timestamp: new Date().toISOString() });
                           setGroupingModalOpen(false);
                           setActiveSubTab("groups");
                        }}
@@ -1013,7 +1075,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             nominationIds: allIds,
                             approved: false
                           });
-                          await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
+                          await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "CREATE", groupId, timestamp: new Date().toISOString() });
                           setGroupingModalOpen(false);
                           setActiveSubTab("groups");
                        }}
@@ -1071,20 +1133,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               logs={groupingAuditLogs}
               onApprove={async (id, approved) => {
                 await onUpdateNomineeGroup(id, { approved });
-                await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: approved ? "APPROVE_GROUP" : "REJECT_GROUP", groupId: id, timestamp: new Date().toISOString() });
+                await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: approved ? "APPROVE_GROUP" : "REJECT_GROUP", groupId: id, timestamp: new Date().toISOString() });
               }}
               onDelete={async (id) => {
-                await onDeleteNomineeGroup(id);
-                await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId: id, timestamp: new Date().toISOString() });
+                setConfirmModal({
+                  isOpen: true,
+                  title: "Delete Group",
+                  message: "Are you sure you want to delete this group permanently? This cannot be undone.",
+                  isDanger: true,
+                  confirmText: "Delete Group",
+                  onConfirm: async () => {
+                    await onDeleteNomineeGroup(id);
+                    await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "REMOVE", groupId: id, timestamp: new Date().toISOString() });
+                  }
+                });
               }}
               onRemoveNomination={async (groupId, nominationId, currentIds) => {
                 const newIds = currentIds.filter(id => id !== nominationId);
                 if (newIds.length === 0) {
                   await onDeleteNomineeGroup(groupId);
-                  await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId, timestamp: new Date().toISOString() });
+                  await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "REMOVE", groupId, timestamp: new Date().toISOString() });
                 } else {
                   await onUpdateNomineeGroup(groupId, { nominationIds: newIds });
-                  await onAddGroupingAuditLog({ adminEmail: adminCreds.email, action: "REMOVE", groupId, nominationId, timestamp: new Date().toISOString() });
+                  await onAddGroupingAuditLog({ adminEmail: loggedInAdmin.email, action: "REMOVE", groupId, nominationId, timestamp: new Date().toISOString() });
                 }
               }}
             />
@@ -1238,6 +1309,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       setNewNomineeCategory(n.categoryId);
                                       setNewNomineePicture(n.avatarUrl || "");
                                       setNewNomineeDesc(n.description);
+                                      setNewNomineeAchievements(n.achievements || []);
                                       setNewNomineeListType(n.listType || (!n.id.startsWith("custom-nom-") ? "final" : "approved"));
                                       setIsNomineeModalOpen(true);
                                     }}
@@ -1248,11 +1320,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
-                                        onDeleteNominee(n.id);
-                                      }
-                                    }}
+                                    onClick={() => setNomineeToDelete(n)}
                                     className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
                                     title="Delete Nominee"
                                   >
@@ -1290,6 +1358,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       setNewNomineeCategory(n.categoryId);
                                       setNewNomineePicture(n.avatarUrl || "");
                                       setNewNomineeDesc(n.description);
+                                      setNewNomineeAchievements(n.achievements || []);
                                       setNewNomineeListType(n.listType || (!n.id.startsWith("custom-nom-") ? "final" : "approved"));
                                       setIsNomineeModalOpen(true);
                                     }}
@@ -1300,11 +1369,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`Are you sure you want to delete ${n.name}?`)) {
-                                        onDeleteNominee(n.id);
-                                      }
-                                    }}
+                                    onClick={() => setNomineeToDelete(n)}
                                     className="flex-1 flex justify-center p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors border border-red-500/20 cursor-pointer"
                                     title="Delete Nominee"
                                   >
@@ -1672,9 +1737,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <button
                         onClick={() => {
-                          if (window.confirm("Are you sure you want to delete this guestbook post permanently?")) {
-                            onDeleteMessage(msg.id);
-                          }
+                          setConfirmModal({
+                            isOpen: true,
+                            title: "Delete Guestbook Post",
+                            message: "Are you sure you want to delete this guestbook post permanently? This cannot be undone.",
+                            isDanger: true,
+                            confirmText: "Delete Post",
+                            onConfirm: async () => {
+                              await onDeleteMessage(msg.id);
+                            }
+                          });
                         }}
                         className="p-2 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 rounded-lg cursor-pointer transition-colors shrink-0"
                         title="Delete Message"
@@ -1867,28 +1939,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm("Restore default phase and ceremony dates?")) {
-                        setFormAnnouncementStart("2026-07-03T00:00");
-                        setFormAnnouncementEnd("2026-07-09T23:59");
-                        setFormNominationStart("2026-07-10T00:00");
-                        setFormNominationEnd("2026-07-30T23:59");
-                        setFormVotingStart("2026-07-31T00:00");
-                        setFormVotingEnd("2026-08-25T23:59");
-                        setFormCeremony("2026-09-05T18:00");
-                        setFormResultsVisible(false);
-                        onUpdateTimelineSettings({
-                          announcementStart: "2026-07-03T00:00:00",
-                          announcementEnd: "2026-07-09T23:59:59",
-                          nominationStart: "2026-07-10T00:00:00",
-                          nominationEnd: "2026-07-30T23:59:59",
-                          votingStart: "2026-07-31T00:00:00",
-                          votingEnd: "2026-08-25T23:59:59",
-                          ceremony: "2026-09-05T18:00:00",
-                          resultsVisible: false,
-                        });
-                        setSuccessMessage("Schedule restored to original defaults.");
-                        setTimeout(() => setSuccessMessage(""), 4000);
-                      }
+                      setConfirmModal({
+                        isOpen: true,
+                        title: "Restore Default Dates",
+                        message: "Are you sure you want to restore the default phase and ceremony dates?",
+                        isDanger: false,
+                        confirmText: "Restore Defaults",
+                        onConfirm: () => {
+                          setFormAnnouncementStart("2026-07-03T00:00");
+                          setFormAnnouncementEnd("2026-07-09T23:59");
+                          setFormNominationStart("2026-07-10T00:00");
+                          setFormNominationEnd("2026-07-30T23:59");
+                          setFormVotingStart("2026-07-31T00:00");
+                          setFormVotingEnd("2026-08-25T23:59");
+                          setFormCeremony("2026-09-05T18:00");
+                          setFormResultsVisible(false);
+                          onUpdateTimelineSettings({
+                            announcementStart: "2026-07-03T00:00:00",
+                            announcementEnd: "2026-07-09T23:59:59",
+                            nominationStart: "2026-07-10T00:00:00",
+                            nominationEnd: "2026-07-30T23:59:59",
+                            votingStart: "2026-07-31T00:00:00",
+                            votingEnd: "2026-08-25T23:59:59",
+                            ceremony: "2026-09-05T18:00:00",
+                            resultsVisible: false,
+                          });
+                          setSuccessMessage("Schedule restored to original defaults.");
+                          setTimeout(() => setSuccessMessage(""), 4000);
+                        }
+                      });
                     }}
                     className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 px-4 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                   >
@@ -1904,68 +1983,495 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div>
                 <h3 className="text-base font-extrabold text-white flex items-center gap-2">
                   <Shield size={18} className="text-amber-400" />
-                  <span>Admin Settings</span>
+                  <span>System Settings & Administrators</span>
                 </h3>
                 <p className="text-xs text-white/60 mt-1 leading-relaxed">
-                  Update the master login credentials for the developer console.
+                  Manage your profile, system state, and global administrator permissions.
                 </p>
               </div>
 
-              {adminCredsSuccess && (
+              {adminActionError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-300 text-xs rounded-xl flex items-center gap-2.5 animate-fade-in">
+                  <XCircle size={16} className="text-red-400 shrink-0" />
+                  <span>{adminActionError}</span>
+                </div>
+              )}
+              {adminActionSuccess && (
                 <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl flex items-center gap-2.5 animate-fade-in">
                   <CheckCircle size={16} className="text-emerald-400 shrink-0" />
-                  <span>{adminCredsSuccess}</span>
+                  <span>{adminActionSuccess}</span>
                 </div>
               )}
 
-              <form onSubmit={handleAdminCredsSave} className="space-y-6">
-                <div className="space-y-4 max-w-md">
+              {/* MY PROFILE SECTION */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 max-w-2xl">
+                <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                  <User size={16} className="text-amber-400" />
+                  My Profile
+                </h4>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  try {
+                    await onUpdateAdmin(loggedInAdmin.id, {
+                      name: profileName,
+                      password: profilePassword,
+                    });
+                    setAdminActionSuccess("Profile updated successfully!");
+                    setTimeout(() => setAdminActionSuccess(""), 3000);
+                  } catch (e: any) {
+                    setAdminActionError(e.message || "Failed to update profile");
+                    setTimeout(() => setAdminActionError(""), 4000);
+                  }
+                }} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-white block">
-                      Admin Email
-                    </label>
+                    <label className="text-xs font-bold text-white block">Name</label>
                     <input
-                      type="email"
-                      value={formAdminEmail}
-                      onChange={(e) => setFormAdminEmail(e.target.value)}
+                      type="text"
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
                       required
                     />
                   </div>
-
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-white block">
-                      Admin Password
-                    </label>
+                    <label className="text-xs font-bold text-white block">Email (Read Only)</label>
                     <input
-                      type="text"
-                      value={formAdminPassword}
-                      onChange={(e) => setFormAdminPassword(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all font-mono tracking-widest"
-                      required
+                      type="email"
+                      value={loggedInAdmin.email}
+                      readOnly
+                      className="w-full bg-white/5 border border-transparent rounded-xl px-4 py-2.5 text-xs text-white/50 cursor-not-allowed"
                     />
                   </div>
-                </div>
-
-                <div className="pt-4 border-t border-white/5 flex gap-3">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-white block">Password</label>
+                    <div className="relative">
+                      <input
+                        type={showProfilePassword ? "text" : "password"}
+                        value={profilePassword}
+                        onChange={(e) => setProfilePassword(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowProfilePassword(!showProfilePassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                      >
+                        {showProfilePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
                   <button
                     type="submit"
-                    className="bg-amber-400 hover:bg-amber-500 text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer shadow-md shadow-amber-400/10 flex items-center gap-2"
+                    className="bg-amber-400 hover:bg-amber-500 text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-colors shadow-md shadow-amber-400/10"
                   >
-                    <Shield size={14} />
-                    Update Credentials
+                    Save Profile Changes
                   </button>
-                </div>
-              </form>
+                </form>
+              </div>
+
+              {/* SUPER ADMIN RESTRICTED AREA */}
+              {loggedInAdmin.role === "SUPER_ADMIN" && (
+                <>
+                  <div className="mt-8 pt-8 border-t border-white/10">
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2 mb-6">
+                      <Users size={18} className="text-amber-400" />
+                      <span>Administrators Management</span>
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Administrators List */}
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-bold text-white mb-4">Current Administrators</h4>
+                        <div className="space-y-3">
+                          {admins.map((admin) => (
+                            <div key={admin.id} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-bold text-white">{admin.name}</p>
+                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${admin.role === 'SUPER_ADMIN' ? 'bg-amber-400/20 text-amber-400' : 'bg-white/10 text-white/60'}`}>
+                                      {admin.role}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-white/60">{admin.email}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {admin.id === loggedInAdmin.id && (
+                                    <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-1 rounded-full font-bold uppercase tracking-wider">
+                                      You
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingAdminId(admin.id);
+                                    setFormAdminName(admin.name);
+                                    setFormAdminEmail(admin.email);
+                                    setFormAdminPassword(admin.password || "");
+                                    setFormAdminRole(admin.role);
+                                    setAdminModalOpen(true);
+                                  }}
+                                  className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[10px] font-bold rounded-lg transition-colors text-center"
+                                >
+                                  Edit User
+                                </button>
+                                {admin.id !== loggedInAdmin.id && (
+                                  <button
+                                    onClick={() => {
+                                      setConfirmModal({
+                                        isOpen: true,
+                                        title: "Delete Administrator",
+                                        message: `DANGER: Are you absolutely sure you want to permanently delete administrator "${admin.name}" (${admin.email})?\n\nThis action cannot be undone and they will immediately lose access to the developer console.`,
+                                        isDanger: true,
+                                        confirmText: "Delete Administrator",
+                                        onConfirm: async () => {
+                                          try {
+                                            await onDeleteAdmin(admin.id);
+                                            setAdminActionSuccess(`Administrator ${admin.name} deleted.`);
+                                            setTimeout(() => setAdminActionSuccess(""), 3000);
+                                          } catch (e: any) {
+                                            setAdminActionError(e.message || "Failed to delete administrator");
+                                            setTimeout(() => setAdminActionError(""), 4000);
+                                          }
+                                        }
+                                      });
+                                    }}
+                                    className="flex-1 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold rounded-lg transition-colors text-center"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Add New Administrator */}
+                      <div className="bg-black/20 border border-white/5 rounded-2xl p-6 h-fit">
+                        <h4 className="text-sm font-bold text-white mb-4">Add New Administrator</h4>
+                        <form onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!formAdminName || !formAdminEmail || !formAdminPassword) return;
+                          try {
+                            await onAddAdmin({
+                              name: formAdminName,
+                              email: formAdminEmail,
+                              password: formAdminPassword,
+                              role: formAdminRole
+                            });
+                            setFormAdminName("");
+                            setFormAdminEmail("");
+                            setFormAdminPassword("");
+                            setFormAdminRole("ADMIN");
+                            setAdminActionSuccess("Administrator added successfully!");
+                            setTimeout(() => setAdminActionSuccess(""), 3000);
+                          } catch (e: any) {
+                            setAdminActionError(e.message || "Failed to add administrator");
+                            setTimeout(() => setAdminActionError(""), 4000);
+                          }
+                        }} className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-white block">Name</label>
+                            <input
+                              type="text"
+                              value={formAdminName}
+                              onChange={(e) => setFormAdminName(e.target.value)}
+                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                              required
+                              placeholder="E.g., Jane Doe"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-white block">Email Address</label>
+                            <input
+                              type="email"
+                              value={formAdminEmail}
+                              onChange={(e) => setFormAdminEmail(e.target.value)}
+                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                              required
+                              placeholder="jane@awol.com"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-white block">Password</label>
+                              <div className="relative">
+                                <input
+                                  type={showAddAdminPassword ? "text" : "password"}
+                                  value={formAdminPassword}
+                                  onChange={(e) => setFormAdminPassword(e.target.value)}
+                                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                                  required
+                                  placeholder="Secure password"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddAdminPassword(!showAddAdminPassword)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                                >
+                                  {showAddAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-white block">Role</label>
+                              <select
+                                value={formAdminRole}
+                                onChange={(e) => setFormAdminRole(e.target.value as "ADMIN" | "SUPER_ADMIN")}
+                                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                              >
+                                <option value="ADMIN">Administrator</option>
+                                <option value="SUPER_ADMIN">Super Admin</option>
+                              </select>
+                            </div>
+                          </div>
+                          <button
+                            type="submit"
+                            className="w-full bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors flex justify-center items-center gap-2 mt-4"
+                          >
+                            <Plus size={14} />
+                            Add Administrator
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 pt-8 border-t border-white/10">
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2 mb-6">
+                      <Shield size={18} className="text-amber-400" />
+                      <span>Danger Zone</span>
+                    </h3>
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-6 max-w-2xl">
+                      <h4 className="text-sm font-bold text-red-400 mb-2 flex items-center gap-2">
+                        <Trash2 size={16} />
+                        Hard Reset
+                      </h4>
+                      <p className="text-xs text-white/60 mb-6">
+                        Hard reset actions for testing purposes. These actions cannot be undone and will permanently clear local state and local storage.
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: "Reset All Database Votes",
+                              message: "WARNING: This will perform a HARD RESET of all your live database votes.\n\nThis will completely clear all current votes for all nominees back to 0, and clear your local device cache.\n\nAre you absolutely sure you want to proceed?",
+                              isDanger: true,
+                              confirmText: "Reset All Votes",
+                              onConfirm: async () => {
+                                await onResetAllData();
+                                setAdminActionSuccess("All votes in the database have been reset to 0 and local cache cleared.");
+                                setTimeout(() => setAdminActionSuccess(""), 5000);
+                              }
+                            });
+                          }}
+                          className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl font-bold text-xs transition-colors flex justify-center items-center gap-2 cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                          Reset All Votes
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: "Bulk Seed Random Votes",
+                              message: "WARNING: This will randomly generate and insert bulk votes into the live database for every single nominee.\n\nThis is meant for testing purposes and will skew the live leaderboard.\n\nAre you absolutely sure you want to seed random votes?",
+                              isDanger: true,
+                              confirmText: "Seed Random Votes",
+                              onConfirm: () => {
+                                onBulkSeedVotes();
+                                setAdminActionSuccess("Testing votes have been seeded randomly into the database!");
+                                setTimeout(() => setAdminActionSuccess(""), 5000);
+                              }
+                            });
+                          }}
+                          className="w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 px-4 py-3 rounded-xl font-bold text-xs transition-colors flex justify-center items-center gap-2 cursor-pointer"
+                        >
+                          <TrendingUp size={14} />
+                          Bulk Seed Random Votes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
         </div>
       </div>
 
-      
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
+              <h3 className={`text-base font-extrabold flex items-center gap-2 ${confirmModal.isDanger ? 'text-red-400' : 'text-amber-400'}`}>
+                {confirmModal.isDanger ? <Shield size={18} /> : <AlertCircle size={18} />}
+                <span>{confirmModal.title}</span>
+              </h3>
+              <button
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-2 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed mb-6">
+                {confirmModal.message}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    await confirmModal.onConfirm();
+                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                  }}
+                  className={`flex-1 px-5 py-2.5 rounded-xl font-bold text-xs transition-colors flex justify-center items-center gap-2 ${
+                    confirmModal.isDanger 
+                      ? 'bg-red-500 hover:bg-red-600 text-white' 
+                      : 'bg-amber-400 hover:bg-amber-500 text-black'
+                  }`}
+                >
+                  {confirmModal.confirmText}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              
+      {/* Admin Modal */}
+      {adminModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <RefreshCw size={18} className="text-amber-400" />
+                <span>Edit Administrator</span>
+              </h3>
+              <button
+                onClick={() => {
+                  setAdminModalOpen(false);
+                  setEditingAdminId(null);
+                }}
+                className="p-2 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editingAdminId) return;
+                try {
+                  await onUpdateAdmin(editingAdminId, {
+                    name: formAdminName,
+                    email: formAdminEmail,
+                    password: formAdminPassword,
+                    role: formAdminRole
+                  });
+                  setAdminModalOpen(false);
+                  setEditingAdminId(null);
+                  setAdminActionSuccess("Administrator updated successfully!");
+                  setTimeout(() => setAdminActionSuccess(""), 3000);
+                } catch (e: any) {
+                  setAdminActionError(e.message || "Failed to update administrator");
+                  setTimeout(() => setAdminActionError(""), 4000);
+                  setAdminModalOpen(false);
+                }
+              }} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white block">Name</label>
+                  <input
+                    type="text"
+                    value={formAdminName}
+                    onChange={(e) => setFormAdminName(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white block">Email</label>
+                  <input
+                    type="email"
+                    value={formAdminEmail}
+                    onChange={(e) => setFormAdminEmail(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white block">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showEditAdminPassword ? "text" : "password"}
+                      value={formAdminPassword}
+                      onChange={(e) => setFormAdminPassword(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditAdminPassword(!showEditAdminPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                    >
+                      {showEditAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white block">Role</label>
+                  <select
+                    value={formAdminRole}
+                    onChange={(e) => setFormAdminRole(e.target.value as "ADMIN" | "SUPER_ADMIN")}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                  >
+                    <option value="ADMIN">Administrator</option>
+                    <option value="SUPER_ADMIN">Super Admin</option>
+                  </select>
+                </div>
+                
+                <div className="pt-4 mt-2 border-t border-white/5 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminModalOpen(false);
+                      setEditingAdminId(null);
+                    }}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-amber-400 hover:bg-amber-500 text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-colors flex justify-center items-center gap-2"
+                  >
+                    <RefreshCw size={14} />
+                    Update User
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Nominee Modal */}
       {isNomineeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -2113,6 +2619,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all resize-none"
                     />
                   </div>
+
+                  {/* Specific Achievements */}
+                  <div className="space-y-3 md:col-span-2 pt-2 border-t border-white/5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-white block">
+                        Specific Achievements
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateAchievements}
+                        disabled={!newNomineeDesc}
+                        className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${
+                          !newNomineeDesc ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-amber-400/10 text-amber-400 hover:bg-amber-400/20 cursor-pointer'
+                        }`}
+                      >
+                        ✨ Auto-Generate from Description
+                      </button>
+                    </div>
+                    {newNomineeAchievements.map((ach, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={ach}
+                          onChange={(e) => {
+                            const newArr = [...newNomineeAchievements];
+                            newArr[idx] = e.target.value;
+                            setNewNomineeAchievements(newArr);
+                          }}
+                          placeholder={`Achievement ${idx + 1}`}
+                          className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newArr = newNomineeAchievements.filter((_, i) => i !== idx);
+                            setNewNomineeAchievements(newArr);
+                          }}
+                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    {newNomineeAchievements.length < 5 && (
+                      <button
+                        type="button"
+                        onClick={() => setNewNomineeAchievements([...newNomineeAchievements, ""])}
+                        className="text-[10px] text-white/50 hover:text-white flex items-center gap-1 mt-1 transition-colors cursor-pointer"
+                      >
+                        <Plus size={12} /> Add Achievement
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="pt-4 border-t border-white/5 flex justify-end gap-3">
@@ -2165,6 +2724,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="px-4 py-2 text-xs font-bold text-white bg-red-500 hover:bg-red-400 rounded-lg transition-colors cursor-pointer border border-red-500"
               >
                 Delete Nomination
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {nomineeToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#111318] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Confirm Deletion</h3>
+            <p className="text-white/70 text-sm mb-6 leading-relaxed">
+              Are you sure you want to permanently delete <strong>{nomineeToDelete.name}</strong> from the nominees list? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setNomineeToDelete(null)}
+                className="px-4 py-2 text-xs font-bold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteNominee(nomineeToDelete.id);
+                  setNomineeToDelete(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-red-500 hover:bg-red-400 rounded-lg transition-colors cursor-pointer border border-red-500"
+              >
+                Delete Nominee
               </button>
             </div>
           </div>

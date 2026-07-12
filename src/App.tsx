@@ -13,7 +13,7 @@ import { VotingSection } from "./components/VotingSection";
 import { ResultsSection } from "./components/ResultsSection";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { CATEGORIES, INITIAL_NOMINEES, CONTACT_INFO } from "./data";
-import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog } from "./types";
+import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser } from "./types";
 import { parseLocalDateTime } from "./utils";
 import { dbService } from "./dbService";
 import { 
@@ -39,18 +39,25 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("overview");
 
   // Admin login state
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return !!localStorage.getItem("awol_admin_auth") || !!sessionStorage.getItem("awol_admin_auth");
+  });
   const [adminEmail, setAdminEmail] = useState<string>("");
   const [adminPassword, setAdminPassword] = useState<string>("");
   const [adminLoginError, setAdminLoginError] = useState<string>("");
-  const [dbAdminCreds, setDbAdminCreds] = useState<{email: string, password: string}>({ email: "admin@awol.com", password: "password123" });
+  const [loggedInAdmin, setLoggedInAdmin] = useState<AdminUser | null>(() => {
+    const saved = localStorage.getItem("awol_admin_auth") || sessionStorage.getItem("awol_admin_auth");
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [rememberMe, setRememberMe] = useState(false);
+  const [dbAdmins, setDbAdmins] = useState<AdminUser[]>([]);
 
   // Custom nominations submitted by users
   const [nominations, setNominations] = useState<Nomination[]>([]);
 
   // Dynamic Nominee pool. Seeded with INITIAL_NOMINEES.
   // When custom nominations are "approved", they are dynamically added as Nominees!
-  const [nominees, setNominees] = useState<Nominee[]>(INITIAL_NOMINEES);
+  const [nominees, setNominees] = useState<Nominee[]>([]);
 
   // User's own cast votes
   const [userVotes, setUserVotes] = useState<UserVote[]>(() => {
@@ -82,8 +89,8 @@ export default function App() {
       setTimelineSettings(settings);
     });
     
-    const unsubAdminCreds = dbService.listenToAdminCredentials((creds) => {
-      setDbAdminCreds(creds);
+    const unsubAdmins = dbService.listenToAdmins((admins) => {
+      setDbAdmins(admins);
     });
     
     const unsubDate = dbService.listenToDate((dateStr) => {
@@ -99,27 +106,14 @@ export default function App() {
     });
 
     const unsubNominees = dbService.listenToNominees((data) => {
-      // Merge with initial nominees if they aren't in DB yet
-      // A more robust way is to seed DB with INITIAL_NOMINEES once,
-      // but for now we'll combine static and dynamic
-      const combined = [...INITIAL_NOMINEES];
-      
-      data.forEach(dbNominee => {
-        const existingIdx = combined.findIndex(n => n.id === dbNominee.id);
-        if (existingIdx >= 0) {
-          combined[existingIdx] = { ...combined[existingIdx], ...dbNominee };
-        } else {
-          combined.push(dbNominee);
-        }
-      });
-      setNominees(combined);
+      setNominees(data);
     });
     const unsubGroups = dbService.listenToNomineeGroups(setNomineeGroups);
     const unsubLogs = dbService.listenToGroupingAuditLogs(setGroupingAuditLogs);
 
     return () => {
       unsubSettings();
-      unsubAdminCreds();
+      unsubAdmins();
       unsubDate();
       unsubNoms();
       unsubMessages();
@@ -268,8 +262,15 @@ export default function App() {
     await dbService.deleteMessage(messageId);
   };
 
-  const handleResetAllData = () => {
+  const handleResetAllData = async () => {
     localStorage.removeItem("awol_user_votes");
+    const promises = nominees.map(nom => {
+      return dbService.setNominee({
+        ...nom,
+        votes: 0
+      });
+    });
+    await Promise.all(promises);
     window.location.reload();
   };
 
@@ -440,9 +441,16 @@ export default function App() {
                 </div>
                 <form onSubmit={(e) => {
                   e.preventDefault();
-                  if (adminEmail === dbAdminCreds.email && adminPassword === dbAdminCreds.password) {
+                  const matchedAdmin = dbAdmins.find(a => a.email === adminEmail && a.password === adminPassword);
+                  if (matchedAdmin) {
+                    if (rememberMe) {
+                      localStorage.setItem("awol_admin_auth", JSON.stringify(matchedAdmin));
+                    } else {
+                      sessionStorage.setItem("awol_admin_auth", JSON.stringify(matchedAdmin));
+                    }
                     setIsAdminLoggedIn(true);
-                    setAdminLoginError("");
+                    setLoggedInAdmin(matchedAdmin);
+                    setAdminPassword("");
                   } else {
                     setAdminLoginError("Incorrect email or password. Please try again.");
                   }
@@ -466,6 +474,18 @@ export default function App() {
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:bg-white/10 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all outline-none text-white tracking-widest"
                       required
                     />
+                  </div>
+                  <div className="flex items-center gap-2 px-1">
+                    <input
+                      type="checkbox"
+                      id="rememberMe"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 text-amber-400 bg-black/40 border border-white/20 rounded focus:ring-amber-400 focus:ring-offset-gray-900 cursor-pointer"
+                    />
+                    <label htmlFor="rememberMe" className="text-xs text-white/70 cursor-pointer">
+                      Remember me
+                    </label>
                   </div>
                   {adminLoginError && (
                     <p className="text-xs text-rose-400 text-center font-bold">{adminLoginError}</p>
@@ -506,8 +526,17 @@ export default function App() {
               onAddNominee={handleAddNominee}
               onUpdateNominee={handleUpdateNominee}
               onDeleteNominee={handleDeleteNominee}
-              adminCreds={dbAdminCreds}
-              onUpdateAdminCreds={dbService.updateAdminCredentials}
+              onLogout={() => {
+                localStorage.removeItem("awol_admin_auth");
+                sessionStorage.removeItem("awol_admin_auth");
+                setIsAdminLoggedIn(false);
+                setLoggedInAdmin(null);
+              }}
+              loggedInAdmin={loggedInAdmin}
+              admins={dbAdmins}
+              onAddAdmin={dbService.addAdmin}
+              onUpdateAdmin={dbService.updateAdmin}
+              onDeleteAdmin={dbService.deleteAdmin}
             />
             )}
           </div>

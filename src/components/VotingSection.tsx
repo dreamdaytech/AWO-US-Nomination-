@@ -470,18 +470,19 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                     Specific Achievements
                   </h4>
                   <ul className="text-sm text-white/70 leading-relaxed space-y-2">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0"></span>
-                      Demonstrated exceptional performance and significant positive impact.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0"></span>
-                      Clear dedication to advancing standards in their respective category.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0"></span>
-                      Recognized by peers and the community for outstanding excellence during the 2025/2026 period.
-                    </li>
+                    {((selectedNominee.achievements && selectedNominee.achievements.length > 0) 
+                        ? selectedNominee.achievements 
+                        : [
+                            "Demonstrated exceptional performance and significant positive impact.",
+                            "Clear dedication to advancing standards in their respective category.",
+                            "Recognized by peers and the community for outstanding excellence during the 2025/2026 period."
+                          ]
+                    ).map((achievement, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0"></span>
+                        {achievement}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               </div>

@@ -478,7 +478,7 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                 id="submit-nomination-btn"
               >
                 <Send size={15} />
-                <span>Submit Sandbox Nomination</span>
+                <span>Submit Nomination</span>
               </button>
             )}
           </form>

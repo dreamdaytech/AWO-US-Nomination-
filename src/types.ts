@@ -26,6 +26,7 @@ export interface Nominee {
   votes: number;
   organization?: string;
   listType?: "final" | "approved";
+  achievements?: string[];
 }
 
 export interface NominationInput {
@@ -88,5 +89,14 @@ export interface Message {
   id: string;
   author: string;
   content: string;
+  createdAt: string;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  password?: string;
+  role: "SUPER_ADMIN" | "ADMIN";
   createdAt: string;
 }

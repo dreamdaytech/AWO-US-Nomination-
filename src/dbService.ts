@@ -13,9 +13,20 @@ import {
   NomineeGroup,
   GroupingAuditLog,
   AdminUser,
+  Category,
 } from "./types";
 
 // ─── Helper: convert snake_case DB rows → camelCase app types ────────────────
+
+export function toCategory(row: any): Category {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    iconName: row.icon_name,
+    orderIndex: row.order_index,
+  };
+}
 
 function toNomination(row: any): Nomination {
   return {
@@ -109,11 +120,44 @@ export const dbService = {
 
   // ── LISTENERS (real-time) ────────────────────────────────────────────────
 
-  listenToSettings: (callback: (settings: TimelineSettings) => void): Unsubscribe => {
+  listenToCategories: (callback: (categories: Category[]) => void, onReady?: () => void): Unsubscribe => {
     // Initial fetch
-    supabase.from("settings").select("*").eq("key", "timeline").single().then(({ data }) => {
-      if (data) callback(data.value as TimelineSettings);
-    });
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("categories").select("*");
+        if (data) callback(data.map(toCategory));
+      } catch (e) {
+        console.error("Error fetching categories:", e);
+      } finally {
+        if (onReady) onReady();
+      }
+    })();
+    // Real-time subscription
+    const channel = supabase
+      .channel("public:categories")
+      .on("postgres_changes", { event: "*", schema: "public", table: "categories" },
+        () => {
+          supabase.from("categories").select("*").then(({ data }) => {
+            if (data) callback(data.map(toCategory));
+          });
+        }
+      )
+      .subscribe();
+    return makeUnsubscribe(channel);
+  },
+
+  listenToSettings: (callback: (settings: TimelineSettings) => void, onReady?: () => void): Unsubscribe => {
+    // Initial fetch
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("settings").select("*").eq("key", "timeline").single();
+        if (data) callback(data.value as TimelineSettings);
+      } catch (e) {
+        console.error("Error fetching timeline settings:", e);
+      } finally {
+        if (onReady) onReady();
+      }
+    })();
     // Real-time subscription
     const channel = supabase
       .channel("settings-timeline")
@@ -127,11 +171,18 @@ export const dbService = {
     return makeUnsubscribe(channel);
   },
 
-  listenToDate: (callback: (date: string) => void): Unsubscribe => {
+  listenToDate: (callback: (date: string) => void, onReady?: () => void): Unsubscribe => {
     // Initial fetch
-    supabase.from("settings").select("*").eq("key", "system").single().then(({ data }) => {
-      if (data?.value?.simulatedDate) callback(data.value.simulatedDate);
-    });
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("settings").select("*").eq("key", "system").single();
+        if (data?.value?.simulatedDate) callback(data.value.simulatedDate);
+      } catch (e) {
+        console.error("Error fetching simulated date:", e);
+      } finally {
+        if (onReady) onReady();
+      }
+    })();
     // Real-time subscription
     const channel = supabase
       .channel("settings-system")
@@ -260,6 +311,52 @@ export const dbService = {
   },
 
   // ── MUTATIONS ────────────────────────────────────────────────────────────
+
+  // Categories
+  setCategory: async (category: Category) => {
+    // Upsert behavior
+    if (category.id) {
+      // Check if it exists. We might be creating a new one if id is 0 or unassigned.
+      // But typically we let postgres auto-generate the ID for new rows.
+      // If we pass an ID that doesn't exist, upsert works but might violate serial sequence.
+      // It's safer to separate insert and update if id is 0.
+      if (category.id === 0) {
+        const { data, error } = await supabase.from("categories").insert({
+          name: category.name,
+          description: category.description,
+          icon_name: category.iconName,
+          order_index: category.orderIndex ?? 0,
+        });
+        if (error) throw error;
+        return data;
+      }
+    }
+    const { data, error } = await supabase.from("categories").upsert({
+      id: category.id,
+      name: category.name,
+      description: category.description,
+      icon_name: category.iconName,
+      order_index: category.orderIndex ?? 0,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  rearrangeCategories: async (categories: Category[]) => {
+    const payload = categories.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      description: cat.description,
+      icon_name: cat.iconName,
+      order_index: cat.orderIndex ?? 0,
+    }));
+    const { error } = await supabase.from("categories").upsert(payload);
+    if (error) throw error;
+  },
+  
+  deleteCategory: async (id: number) => {
+    return supabase.from("categories").delete().eq("id", id);
+  },
 
   updateSettings: async (settings: TimelineSettings) => {
     const { error } = await supabase

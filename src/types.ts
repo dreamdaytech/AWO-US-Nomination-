@@ -15,6 +15,7 @@ export interface Category {
   name: string;
   description: string;
   iconName: string;
+  orderIndex?: number;
 }
 
 export interface Nominee {

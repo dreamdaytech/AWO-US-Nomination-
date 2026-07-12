@@ -42,7 +42,7 @@ import {
 } from "recharts";
 import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser } from "../types";
 import { AdminGroupsTab } from "./AdminGroupsTab";
-import { Users, Search, Filter, ArrowUpDown, ChevronDown, X } from "lucide-react";
+import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown } from "lucide-react";
 
 import { formatDateTime } from "../utils";
 import { parseLocalDateTime } from "../utils";
@@ -64,6 +64,10 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 interface AdminDashboardProps {
   categories: Category[];
+  onCreateCategory: (cat: Category) => void;
+  onUpdateCategory: (cat: Category) => void;
+  onDeleteCategory: (id: number) => void;
+  onRearrangeCategories?: (categories: Category[]) => Promise<void>;
   nominees: Nominee[];
   nominations: Nomination[];
   guestbookMessages: Message[];
@@ -99,6 +103,10 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   categories,
+  onCreateCategory,
+  onUpdateCategory,
+  onDeleteCategory,
+  onRearrangeCategories,
   nominees,
   nominations,
   guestbookMessages,
@@ -131,9 +139,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteNomineeGroup,
   onAddGroupingAuditLog
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings" | "administrators">("time");
-  const [manageNomineesTab, setManageNomineesTab] = useState<"all" | "manual" | "approved">("all");
+  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings" | "administrators" | "categories">("time");
+  const [manageNomineesTab, setManageNomineesTab] = useState<"all" | "manual" | "approved" | "categories">("all");
   const [manageNomineesSearch, setManageNomineesSearch] = useState("");
+  
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "has_nominees" | "empty">("all");
+  const [categorySortBy, setCategorySortBy] = useState<"custom" | "id_asc" | "id_desc" | "name_asc" | "name_desc">("custom");
+  const [categoryView, setCategoryView] = useState<"grid" | "list">("grid");
   const [manageNomineesCategoryFilter, setManageNomineesCategoryFilter] = useState<string>("all");
   const [manageNomineesSortBy, setManageNomineesSortBy] = useState<"category" | "name" | "votes-desc" | "votes-asc">("category");
   const [customDateStr, setCustomDateStr] = useState(simulatedDate.toISOString().split("T")[0]);
@@ -164,16 +177,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     isOpen: boolean;
     title: string;
     message: string;
-    isDanger: boolean;
+    isDanger?: boolean;
+    isAlertOnly?: boolean;
     confirmText: string;
     onConfirm: () => void | Promise<void>;
   }>({
     isOpen: false,
     title: "",
     message: "",
-    isDanger: false,
-    confirmText: "Confirm",
-    onConfirm: () => {}
+    confirmText: "",
+    onConfirm: () => {},
   });
 
   // Profile Edit States
@@ -211,6 +224,121 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [nominationCategoryFilter, setNominationCategoryFilter] = useState<string>("all");
   const [nominationSortBy, setNominationSortBy] = useState<"date" | "name">("date");
 
+  // Category Management State
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<number | null>(null);
+  const [catFormName, setCatFormName] = useState("");
+  const [catFormDesc, setCatFormDesc] = useState("");
+  const [catFormIcon, setCatFormIcon] = useState("Award");
+
+  const openNewCategoryModal = () => {
+    setEditingCategory(null);
+    setCatFormName("");
+    setCatFormDesc("");
+    setCatFormIcon("Award");
+    setIsCategoryModalOpen(true);
+  };
+
+  const openEditCategoryModal = (cat: Category) => {
+    setEditingCategory(cat);
+    setCatFormName(cat.name);
+    setCatFormDesc(cat.description);
+    setCatFormIcon(cat.iconName);
+    setIsCategoryModalOpen(true);
+  };
+
+  const saveCategory = async () => {
+    if (!catFormName.trim() || !catFormDesc.trim() || !catFormIcon.trim()) {
+      setConfirmModal({
+        isOpen: true,
+        title: "Validation Error",
+        message: "All fields are required to save a category.",
+        isDanger: true,
+        isAlertOnly: true,
+        confirmText: "OK",
+        onConfirm: () => {}
+      });
+      return;
+    }
+    const cat: Category = {
+      id: editingCategory ? editingCategory.id : 0,
+      name: catFormName,
+      description: catFormDesc,
+      iconName: catFormIcon
+    };
+    try {
+      if (editingCategory) {
+        await onUpdateCategory(cat);
+      } else {
+        await onCreateCategory(cat);
+      }
+      setIsCategoryModalOpen(false);
+    } catch (e: any) {
+      console.error(e);
+      setConfirmModal({
+        isOpen: true,
+        title: "Database Error",
+        message: `Error saving category:\n\n${e.message || e}`,
+        isDanger: true,
+        isAlertOnly: true,
+        confirmText: "OK",
+        onConfirm: () => {}
+      });
+    }
+  };
+
+  const attemptDeleteCategory = (id: number) => {
+    const hasNominees = nominees.some((n) => n.categoryId === id);
+    if (hasNominees) {
+      setConfirmModal({
+        isOpen: true,
+        title: "Action Blocked",
+        message: "Cannot delete this category because there are active nominees in it. Please delete or move the nominees first.",
+        isDanger: true,
+        isAlertOnly: true,
+        confirmText: "OK",
+        onConfirm: () => {}
+      });
+      return;
+    }
+    const catName = categories.find(c => c.id === id)?.name || "Unknown";
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Category",
+      message: `Are you sure you want to delete the "${catName}" category?\n\nThis action cannot be undone.`,
+      isDanger: true,
+      confirmText: "Delete",
+      onConfirm: async () => {
+        onDeleteCategory(id);
+      }
+    });
+  };
+
+  const moveCategory = async (index: number, direction: 'up' | 'down') => {
+    if (!onRearrangeCategories) return;
+    if (categorySortBy !== "custom") return;
+
+    const newCats = [...displayedCategories];
+    if (direction === 'up' && index > 0) {
+      const temp = newCats[index];
+      newCats[index] = newCats[index - 1];
+      newCats[index - 1] = temp;
+    } else if (direction === 'down' && index < newCats.length - 1) {
+      const temp = newCats[index];
+      newCats[index] = newCats[index + 1];
+      newCats[index + 1] = temp;
+    } else {
+      return;
+    }
+
+    newCats.forEach((cat, i) => {
+      cat.orderIndex = i;
+    });
+
+    await onRearrangeCategories(newCats);
+  };
+
   React.useEffect(() => {
     setFormAnnouncementStart(timelineSettings.announcementStart.slice(0, 16));
     setFormAnnouncementEnd(timelineSettings.announcementEnd.slice(0, 16));
@@ -229,6 +357,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Filter & Sort Nominations
   const displayedNominees = nominees.filter(n => manageNomineesTab === "all" ? true : manageNomineesTab === "manual" ? (n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-"))) : (n.listType === "approved" || (!n.listType && n.id.startsWith("custom-nom-"))));
+
+  let displayedCategories = [...categories];
+  if (categorySearch.trim()) {
+    const q = categorySearch.toLowerCase();
+    displayedCategories = displayedCategories.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      c.description.toLowerCase().includes(q)
+    );
+  }
+  if (categoryFilter === "has_nominees") {
+    displayedCategories = displayedCategories.filter(c => nominees.some(n => n.categoryId === c.id));
+  } else if (categoryFilter === "empty") {
+    displayedCategories = displayedCategories.filter(c => !nominees.some(n => n.categoryId === c.id));
+  }
+  if (categorySortBy === "name_asc") displayedCategories.sort((a,b) => a.name.localeCompare(b.name));
+  else if (categorySortBy === "name_desc") displayedCategories.sort((a,b) => b.name.localeCompare(a.name));
+  else if (categorySortBy === "id_asc") displayedCategories.sort((a,b) => a.id - b.id);
+  else if (categorySortBy === "id_desc") displayedCategories.sort((a,b) => b.id - a.id);
+  else if (categorySortBy === "custom") displayedCategories.sort((a,b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   const filteredNominations = nominations
     .filter((nom) => {
       // Search
@@ -577,6 +724,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <User size={14} className={activeSubTab === "manage_nominees" ? "text-black" : "text-amber-400"} />
               <span>Manage Nominees</span>
             </button>
+
+
 
             <button
               onClick={() => setActiveSubTab("ballots")}
@@ -1125,6 +1274,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
+
           {activeSubTab === "groups" && (
             <AdminGroupsTab
               groups={nomineeGroups}
@@ -1203,6 +1353,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onClick={() => setManageNomineesTab("approved")}
                       className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${manageNomineesTab === "approved" ? "bg-amber-400 text-black" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                     >Approved Nominations</button>
+                    <button 
+                      onClick={() => setManageNomineesTab("categories")}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${manageNomineesTab === "categories" ? "bg-amber-400 text-black" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                    ><List size={12}/> Categories</button>
                   </div>
                   <div className="flex bg-black/40 border border-white/10 rounded-lg p-1 shrink-0">
                     <button 
@@ -1222,7 +1376,135 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* Manage Nominees Filters & Controls */}
+                {manageNomineesTab === "categories" ? (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center bg-black/20 p-4 rounded-xl border border-white/5">
+                      <div>
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                          <List className="text-amber-400" size={24} />
+                          Category Management
+                        </h3>
+                        <p className="text-white/60 text-sm mt-1">Add, edit, or remove award categories.</p>
+                      </div>
+                      <button
+                        onClick={openNewCategoryModal}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-400 to-amber-600 text-black font-extrabold rounded-lg flex items-center gap-2 hover:scale-105 transition-transform"
+                      >
+                        <Plus size={18} />
+                        New Category
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-3 mb-6">
+                      <div className="flex-1 relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                        <input
+                          type="text"
+                          placeholder="Search categories..."
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <div className="flex bg-black/40 border border-white/10 rounded-xl p-1">
+                          <button
+                            onClick={() => setCategoryView("grid")}
+                            className={`p-1.5 rounded-lg transition-colors ${categoryView === "grid" ? "bg-amber-400 text-black" : "text-white/40 hover:text-white"}`}
+                          >
+                            <LayoutGrid size={14} />
+                          </button>
+                          <button
+                            onClick={() => setCategoryView("list")}
+                            className={`p-1.5 rounded-lg transition-colors ${categoryView === "list" ? "bg-amber-400 text-black" : "text-white/40 hover:text-white"}`}
+                          >
+                            <List size={14} />
+                          </button>
+                        </div>
+                        <div className="relative flex-1 min-w-[140px]">
+                          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                          <select
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value as any)}
+                            className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                          >
+                            <option value="all">All Categories</option>
+                            <option value="has_nominees">Has Nominees</option>
+                            <option value="empty">Empty Categories</option>
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                        </div>
+                        <div className="relative flex-1 min-w-[160px]">
+                          <ArrowUpDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                          <select
+                            value={categorySortBy}
+                            onChange={(e) => setCategorySortBy(e.target.value as any)}
+                            className="w-full pl-9 pr-8 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-white appearance-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all outline-none"
+                          >
+                            <option value="custom">Custom Order</option>
+                            <option value="id_asc">Oldest First</option>
+                            <option value="id_desc">Newest First</option>
+                            <option value="name_asc">Name (A-Z)</option>
+                            <option value="name_desc">Name (Z-A)</option>
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={categoryView === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "flex flex-col gap-3"}>
+                      {displayedCategories.map((cat, index) => (
+                        <div key={cat.id} className={`bg-white/5 border border-white/10 rounded-xl p-5 hover:border-amber-400/30 transition-all group/cat ${categoryView === "list" ? "flex items-center justify-between" : "flex flex-col justify-between"}`}>
+                          <div className={`flex gap-3 ${categoryView === "list" ? "items-center flex-1" : "flex-col space-y-3"}`}>
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-amber-400/10 text-amber-400 rounded-lg shrink-0">
+                                <Trophy size={18} />
+                              </div>
+                              <h4 className={`font-bold text-white ${categoryView === "list" ? "text-base min-w-[200px]" : "text-lg"}`}>{cat.name}</h4>
+                            </div>
+                            <p className={`text-white/70 text-sm leading-relaxed ${categoryView === "list" ? "line-clamp-1 flex-1 px-4" : "line-clamp-3"}`}>{cat.description}</p>
+                            <div className={`text-[10px] text-white/40 font-mono shrink-0 ${categoryView === "list" ? "w-[120px]" : ""}`}>
+                              Icon: {cat.iconName} | ID: {cat.id}
+                            </div>
+                          </div>
+                          <div className={`${categoryView === "list" ? "flex items-center gap-2 shrink-0 ml-4 border-l border-white/10 pl-4" : "mt-4 pt-4 border-t border-white/10 flex gap-2"}`}>
+                            {categorySortBy === "custom" && categoryFilter === "all" && categorySearch === "" && (
+                              <div className="flex flex-col bg-black/40 rounded-lg overflow-hidden shrink-0">
+                                <button onClick={() => moveCategory(index, 'up')} disabled={index === 0} className="p-1 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-white/60 hover:text-white transition-colors">
+                                  <ArrowUp size={12} />
+                                </button>
+                                <button onClick={() => moveCategory(index, 'down')} disabled={index === displayedCategories.length - 1} className="p-1 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-white/60 hover:text-white transition-colors">
+                                  <ArrowDown size={12} />
+                                </button>
+                              </div>
+                            )}
+                            <button
+                              onClick={() => openEditCategoryModal(cat)}
+                              className={`py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-bold rounded flex justify-center items-center gap-2 transition-colors cursor-pointer ${categoryView === "list" ? "px-4" : "flex-1"}`}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => attemptDeleteCategory(cat.id)}
+                              className={`py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded flex justify-center items-center gap-2 transition-colors cursor-pointer ${categoryView === "list" ? "px-4" : "flex-1"}`}
+                            >
+                              <Trash2 size={14} />
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {displayedCategories.length === 0 && (
+                        <div className="col-span-full py-12 text-center border border-dashed border-white/10 rounded-xl bg-black/10">
+                          <AlertCircle className="mx-auto text-white/20 mb-3" size={32} />
+                          <p className="text-white/50 text-sm">No categories match your search/filter.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Manage Nominees Filters & Controls */}
                 <div className="flex flex-col md:flex-row gap-3 mb-6">
                   <div className="flex-1 relative">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
@@ -1438,9 +1720,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     ) : null;
                   })()}
                 </div>
-              </div>
+              </>
+            )}
             </div>
-          )}
+          </div>
+        )}
+
 
           {/* TAB 3: BALLOT & STANDINGS DESK */}
           {activeSubTab === "ballots" && (
@@ -2330,12 +2615,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {confirmModal.message}
               </div>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                  className="flex-1 bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors"
-                >
-                  Cancel
-                </button>
+                {!confirmModal.isAlertOnly && (
+                  <button
+                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
                 <button
                   onClick={async () => {
                     await confirmModal.onConfirm();
@@ -2472,9 +2759,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* Category Modal */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-lg p-6 flex flex-col gap-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <List className="text-amber-400" />
+              {editingCategory ? "Edit Category" : "New Category"}
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-white/70 mb-1.5 uppercase tracking-wider">Category Name</label>
+                <input
+                  type="text"
+                  value={catFormName}
+                  onChange={(e) => setCatFormName(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/50 transition-all font-sans"
+                  placeholder="e.g. New Artist of the Year"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-white/70 mb-1.5 uppercase tracking-wider">Description</label>
+                <textarea
+                  value={catFormDesc}
+                  onChange={(e) => setCatFormDesc(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/50 transition-all font-sans min-h-[100px] resize-y"
+                  placeholder="Describe the criteria for this category..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-white/70 mb-1.5 uppercase tracking-wider">Icon Name (Lucide React)</label>
+                <input
+                  type="text"
+                  value={catFormIcon}
+                  onChange={(e) => setCatFormIcon(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/50 transition-all font-sans"
+                  placeholder="e.g. Trophy, Star, Music, Heart"
+                />
+                <p className="text-[10px] text-white/40 mt-1">Must be a valid Lucide React icon name (e.g. Trophy, Music, Award).</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-white/10">
+              <button
+                onClick={() => setIsCategoryModalOpen(false)}
+                className="px-6 py-2.5 rounded-xl font-bold text-white/70 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveCategory}
+                className="px-6 py-2.5 rounded-xl font-bold bg-amber-400 text-black hover:bg-amber-500 transition-colors shadow-[0_0_15px_rgba(251,191,36,0.3)]"
+              >
+                Save Category
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Nominee Modal */}
       {isNomineeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5 shrink-0">
               <h3 className="text-base font-extrabold text-white flex items-center gap-2">

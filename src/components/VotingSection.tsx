@@ -69,6 +69,23 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
     } as Nominee))
   ];
 
+  const hasDeepLinked = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!hasDeepLinked.current && allNominees.length > 0) {
+      hasDeepLinked.current = true;
+      const searchParams = new URLSearchParams(window.location.search);
+      const nomineeId = searchParams.get("nominee");
+      if (nomineeId) {
+        const nominee = allNominees.find((n) => n.id === nomineeId);
+        if (nominee) {
+          setSelectedNominee(nominee);
+          setSearchQuery(nominee.name);
+        }
+      }
+    }
+  }, [allNominees]);
+
 
   // Group nominees by category
   const getNomineesForCategory = (catId: number) => {
@@ -284,22 +301,26 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
               return (
                 <div key={category.id} className="space-y-4">
                   {/* Sub-header for the category group */}
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col gap-3">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-amber-400/10 text-amber-400 rounded-md">
-                        <CategoryIcon name={category.iconName} size={13} />
+                  <div className="relative bg-gradient-to-r from-amber-400/10 via-amber-400/5 to-transparent p-4 sm:p-5 rounded-2xl border border-amber-400/20 shadow-[0_0_30px_rgba(251,191,36,0.05)] overflow-hidden flex flex-col gap-4">
+                    {/* Decorative subtle glow */}
+                    <div className="absolute top-0 left-0 w-32 h-full bg-gradient-to-r from-amber-400/10 to-transparent blur-2xl pointer-events-none"></div>
+
+                    <div className="relative z-10 flex items-center gap-4">
+                      <div className="p-2.5 bg-gradient-to-br from-amber-400 to-amber-500 text-black rounded-xl shadow-[0_0_15px_rgba(251,191,36,0.4)]">
+                        <CategoryIcon name={category.iconName} size={20} />
                       </div>
                       <div className="flex-grow">
-                        <span className="text-[9px] font-mono text-amber-400 font-bold block uppercase leading-none">
-                          Cat {category.id.toString().padStart(2, "0")}
+                        <span className="text-[10px] tracking-widest font-mono text-amber-400 font-black block uppercase mb-1 drop-shadow-md">
+                          Category {category.id.toString().padStart(2, "0")}
                         </span>
-                        <span className="text-xs font-extrabold text-white leading-none">
+                        <h3 className="text-lg sm:text-xl font-black text-white leading-none tracking-tight">
                           {category.name}
-                        </span>
+                        </h3>
                       </div>
                       {catVote && (
-                        <span className="text-[9px] font-mono text-emerald-400 font-bold bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/15">
-                          Vote Registered
+                        <span className="text-[10px] font-sans font-bold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20 shadow-[0_0_10px_rgba(52,211,153,0.1)] flex items-center gap-1.5 whitespace-nowrap">
+                          <Check size={12} strokeWidth={3} />
+                          Voted
                         </span>
                       )}
                     </div>
@@ -491,10 +512,14 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
+                      const urlObj = new URL(window.location.href);
+                      urlObj.searchParams.set('nominee', selectedNominee.id);
+                      const shareUrl = urlObj.toString();
+                      
                       const shareData = {
                         title: `Vote for ${selectedNominee.name}`,
                         text: `Check out ${selectedNominee.name}, a nominee for ${categories.find(c => c.id === selectedNominee.categoryId)?.name}!`,
-                        url: window.location.href,
+                        url: shareUrl,
                       };
                       if (navigator.share) {
                         try {
@@ -503,7 +528,7 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                           console.error("Error sharing:", err);
                         }
                       } else {
-                        const url = encodeURIComponent(window.location.href);
+                        const url = encodeURIComponent(shareUrl);
                         const text = encodeURIComponent(shareData.text);
                         window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
                       }
@@ -516,7 +541,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                   </button>
                   <button
                     onClick={() => {
-                      const url = encodeURIComponent(window.location.href);
+                      const urlObj = new URL(window.location.href);
+                      urlObj.searchParams.set('nominee', selectedNominee.id);
+                      const url = encodeURIComponent(urlObj.toString());
                       const text = encodeURIComponent(`Check out ${selectedNominee.name}, a nominee!`);
                       window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
                     }}
@@ -527,7 +554,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                   </button>
                   <button
                     onClick={() => {
-                      const url = encodeURIComponent(window.location.href);
+                      const urlObj = new URL(window.location.href);
+                      urlObj.searchParams.set('nominee', selectedNominee.id);
+                      const url = encodeURIComponent(urlObj.toString());
                       window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, "_blank");
                     }}
                     className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white bg-[#1877F2]/20 hover:bg-[#1877F2]/40 rounded-lg transition-colors cursor-pointer"
@@ -537,7 +566,12 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                   </button>
                 </div>
                 <button 
-                  onClick={() => setSelectedNominee(null)}
+                  onClick={() => {
+                    setSelectedNominee(null);
+                    const urlObj = new URL(window.location.href);
+                    urlObj.searchParams.delete('nominee');
+                    window.history.replaceState({}, '', urlObj.toString());
+                  }}
                   className="px-5 py-2 text-xs font-bold text-black bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer w-full sm:w-auto"
                 >
                   Close Profile

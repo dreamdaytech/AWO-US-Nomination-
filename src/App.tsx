@@ -12,10 +12,11 @@ import { NominationForm } from "./components/NominationForm";
 import { VotingSection } from "./components/VotingSection";
 import { ResultsSection } from "./components/ResultsSection";
 import { AdminDashboard } from "./components/AdminDashboard";
-import { CATEGORIES, INITIAL_NOMINEES, CONTACT_INFO } from "./data";
-import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser } from "./types";
+import { INITIAL_NOMINEES, CONTACT_INFO } from "./data";
+import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, Category } from "./types";
 import { parseLocalDateTime } from "./utils";
-import { dbService } from "./dbService";
+import { supabase } from "./supabase";
+import { dbService, toCategory } from "./dbService";
 import { 
   Award, 
   Calendar, 
@@ -36,7 +37,13 @@ export default function App() {
   
   const [simulatedDate, setSimulatedDate] = useState<Date>(parseLocalDateTime("2026-07-09T12:00:00"));
 
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has("nominee")) return "vote";
+    }
+    return "overview";
+  });
 
   // Admin login state
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
@@ -82,20 +89,40 @@ export default function App() {
   const [selectedCategoryIdForForm, setSelectedCategoryIdForForm] = useState<number>(0);
   const [nomineeGroups, setNomineeGroups] = useState<NomineeGroup[]>([]);
   const [groupingAuditLogs, setGroupingAuditLogs] = useState<GroupingAuditLog[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isSystemReady, setIsSystemReady] = useState(false);
 
   // Setup Firestore listeners
   useEffect(() => {
-    const unsubSettings = dbService.listenToSettings((settings) => {
-      setTimelineSettings(settings);
-    });
+    let settingsReady = false;
+    let dateReady = false;
+    let categoriesReady = false;
+    const checkReady = () => {
+      if (settingsReady && dateReady && categoriesReady) setIsSystemReady(true);
+    };
+
+    const unsubSettings = dbService.listenToSettings(
+      (settings) => setTimelineSettings(settings),
+      () => { settingsReady = true; checkReady(); }
+    );
     
     const unsubAdmins = dbService.listenToAdmins((admins) => {
       setDbAdmins(admins);
     });
     
-    const unsubDate = dbService.listenToDate((dateStr) => {
-      setSimulatedDate(parseLocalDateTime(dateStr));
-    });
+    const unsubDate = dbService.listenToDate(
+      (dateStr) => setSimulatedDate(parseLocalDateTime(dateStr)),
+      () => { dateReady = true; checkReady(); }
+    );
+
+    const unsubCategories = dbService.listenToCategories(
+      (cats) => {
+        // Sort categories by orderIndex so they always display in the custom arrangement
+        const sortedCats = cats.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+        setCategories(sortedCats);
+      },
+      () => { categoriesReady = true; checkReady(); }
+    );
 
     const unsubNoms = dbService.listenToNominations((data) => {
       setNominations(data);
@@ -115,6 +142,7 @@ export default function App() {
       unsubSettings();
       unsubAdmins();
       unsubDate();
+      unsubCategories();
       unsubNoms();
       unsubMessages();
       unsubNominees();
@@ -286,6 +314,44 @@ export default function App() {
     await Promise.all(promises);
   };
 
+  // Category Handlers
+  const handleCreateCategory = async (cat: Category) => {
+    // Determine the max orderIndex and set this to max + 1
+    const maxOrder = categories.reduce((max, c) => Math.max(max, c.orderIndex ?? 0), 0);
+    const newCat = { ...cat, orderIndex: maxOrder + 1 };
+    await dbService.setCategory(newCat);
+    // Manually refresh to ensure UI updates instantly even if real-time replication is disabled
+    supabase.from("categories").select("*").then(({ data }) => {
+      if (data) {
+        const cats = data.map(toCategory).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+        setCategories(cats);
+      }
+    });
+  };
+  const handleUpdateCategory = async (cat: Category) => {
+    await dbService.setCategory(cat);
+    supabase.from("categories").select("*").then(({ data }) => {
+      if (data) {
+        const cats = data.map(toCategory).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+        setCategories(cats);
+      }
+    });
+  };
+  const handleDeleteCategory = async (id: number) => {
+    await dbService.deleteCategory(id);
+    supabase.from("categories").select("*").then(({ data }) => {
+      if (data) {
+        const cats = data.map(toCategory).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+        setCategories(cats);
+      }
+    });
+  };
+  const handleRearrangeCategories = async (cats: Category[]) => {
+    // Optimistically update UI
+    setCategories(cats);
+    await dbService.rearrangeCategories(cats);
+  };
+
   // Switch simulated date presets
   const handlePresetSelect = (preset: string) => {
     let dateStr = "2026-07-09T12:00:00";
@@ -304,6 +370,14 @@ export default function App() {
     await dbService.updateSimulatedDate(date.toISOString());
   };
 
+  if (!isSystemReady) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center">
+         <div className="w-12 h-12 border-4 border-amber-400/20 border-t-amber-400 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#05070a] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))] flex flex-col font-sans antialiased text-white relative overflow-hidden" id="main-application-root">
       
@@ -318,7 +392,7 @@ export default function App() {
       />
 
       {/* MAIN APPLICATION STAGE */}
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 flex-grow w-full relative z-10">
+      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 flex-grow w-full relative">
         {/* Horizontal awards countdown timeline */}
         <TimelineWidget currentPhase={phase} timelineSettings={timelineSettings} simulatedDate={simulatedDate} />
 
@@ -340,7 +414,7 @@ export default function App() {
 
             {/* Categories Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="categories-cards-grid">
-              {CATEGORIES.map((cat) => {
+              {categories.map((cat) => {
                 const categoryNominees = nominees.filter((n) => n.categoryId === cat.id);
                 return (
                   <CategoryCard
@@ -369,7 +443,7 @@ export default function App() {
         {activeTab === "nominate" && (
           <div className="animate-fade-in" id="nominate-tab-content">
             <NominationForm
-              categories={CATEGORIES}
+              categories={categories}
               selectedCategoryId={selectedCategoryIdForForm}
               onSubmitNomination={handleSubmitNomination}
               recentNominations={nominations}
@@ -386,7 +460,7 @@ export default function App() {
         {activeTab === "vote" && (
           <div className="animate-fade-in" id="vote-tab-content">
             <VotingSection
-              categories={CATEGORIES}
+              categories={categories}
               nominees={nominees.filter(n => n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-")))}
               nomineeGroups={nomineeGroups}
               userVotes={userVotes}
@@ -416,7 +490,7 @@ export default function App() {
               </div>
             ) : (
             <ResultsSection
-              categories={CATEGORIES}
+              categories={categories}
               nominees={nominees.filter(n => n.listType === "final" || (!n.listType && !n.id.startsWith("custom-nom-")))}
               guestbookMessages={guestbookMessages}
               onAddMessage={handleAddMessage}
@@ -500,7 +574,11 @@ export default function App() {
               </div>
             ) : (
             <AdminDashboard
-              categories={CATEGORIES}
+              categories={categories}
+              onCreateCategory={handleCreateCategory}
+              onUpdateCategory={handleUpdateCategory}
+              onDeleteCategory={handleDeleteCategory}
+              onRearrangeCategories={handleRearrangeCategories}
               nominees={nominees}
               nominations={nominations}
               guestbookMessages={guestbookMessages}

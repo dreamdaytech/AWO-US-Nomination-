@@ -28,7 +28,9 @@ import {
   List,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Key,
+  Lock
 } from "lucide-react";
 import { 
   ResponsiveContainer, 
@@ -40,9 +42,9 @@ import {
   Tooltip,
   Cell
 } from "recharts";
-import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser } from "../types";
+import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, SecuritySettings } from "../types";
 import { AdminGroupsTab } from "./AdminGroupsTab";
-import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown } from "lucide-react";
+import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown, Download } from "lucide-react";
 
 import { formatDateTime } from "../utils";
 import { parseLocalDateTime } from "../utils";
@@ -99,6 +101,11 @@ interface AdminDashboardProps {
   onUpdateNomineeGroup: (id: string, data: Partial<NomineeGroup>) => Promise<void>;
   onDeleteNomineeGroup: (id: string) => Promise<void>;
   onAddGroupingAuditLog: (log: Omit<GroupingAuditLog, "id">) => Promise<void>;
+  securitySettings: SecuritySettings;
+  onUpdateSecuritySettings: (settings: SecuritySettings) => void;
+  onGenerateVotingCodes: (quantity: number) => Promise<void>;
+  onFetchCodeStats: () => Promise<{total: number, used: number, unused: number}>;
+  onFetchUnusedCodes: () => Promise<string[]>;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -137,9 +144,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCreateNomineeGroup,
   onUpdateNomineeGroup,
   onDeleteNomineeGroup,
-  onAddGroupingAuditLog
+  onAddGroupingAuditLog,
+  securitySettings,
+  onUpdateSecuritySettings,
+  onGenerateVotingCodes,
+  onFetchCodeStats,
+  onFetchUnusedCodes
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings" | "administrators" | "categories">("time");
+  const [activeSubTab, setActiveSubTab] = useState<"time" | "nominations" | "groups" | "manage_nominees" | "ballots" | "guestbook" | "schedule" | "settings" | "administrators" | "categories" | "security">("time");
+  const [activeSettingsTab, setActiveSettingsTab] = useState<"profile" | "administrators" | "security" | "danger">("profile");
   const [manageNomineesTab, setManageNomineesTab] = useState<"all" | "manual" | "approved" | "categories">("all");
   const [manageNomineesSearch, setManageNomineesSearch] = useState("");
   
@@ -216,6 +229,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Ballot Filters
   const [ballotSearch, setBallotSearch] = useState("");
   const [ballotCategoryFilter, setBallotCategoryFilter] = useState("all");
+
+  const [codeStats, setCodeStats] = useState<{ total: number, used: number, unused: number } | null>(null);
+  const [generateQty, setGenerateQty] = useState("100");
+  const [isGeneratingCodes, setIsGeneratingCodes] = useState(false);
+  const [isExportingCodes, setIsExportingCodes] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+
+  React.useEffect(() => {
+    if (activeSubTab === "security" && securitySettings?.requireAccessCode) {
+      onFetchCodeStats().then(setCodeStats).catch(console.error);
+    }
+  }, [activeSubTab, securitySettings?.requireAccessCode, onFetchCodeStats]);
   const [ballotSortBy, setBallotSortBy] = useState<"category" | "votes-desc" | "votes-asc" | "name">("category");
 
   // Nomination Desk Filters
@@ -776,6 +802,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <Shield size={14} className={activeSubTab === "settings" ? "text-black" : "text-amber-400"} />
               <span>Settings</span>
             </button>
+
           </div>
         </div>
 
@@ -2268,11 +2295,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div>
                 <h3 className="text-base font-extrabold text-white flex items-center gap-2">
                   <Shield size={18} className="text-amber-400" />
-                  <span>System Settings & Administrators</span>
+                  <span>System Settings & Configuration</span>
                 </h3>
                 <p className="text-xs text-white/60 mt-1 leading-relaxed">
-                  Manage your profile, system state, and global administrator permissions.
+                  Manage your profile, system state, voting security, and global administrator permissions.
                 </p>
+              </div>
+
+              {/* SETTINGS SUB-TABS */}
+              <div className="flex flex-wrap gap-2 pb-4 border-b border-white/10">
+                <button
+                  onClick={() => setActiveSettingsTab("profile")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === "profile" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white"}`}
+                >
+                  My Profile
+                </button>
+                {loggedInAdmin.role === "SUPER_ADMIN" && (
+                  <button
+                    onClick={() => setActiveSettingsTab("administrators")}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === "administrators" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white"}`}
+                  >
+                    Administrators
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveSettingsTab("security")}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === "security" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white"}`}
+                >
+                  Security & Voting Access
+                </button>
+                {loggedInAdmin.role === "SUPER_ADMIN" && (
+                  <button
+                    onClick={() => setActiveSettingsTab("danger")}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === "danger" ? "bg-red-500/10 text-red-400" : "text-red-400/50 hover:bg-red-500/5 hover:text-red-400"}`}
+                  >
+                    Danger Zone
+                  </button>
+                )}
               </div>
 
               {adminActionError && (
@@ -2289,7 +2348,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* MY PROFILE SECTION */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 max-w-2xl">
+              {activeSettingsTab === "profile" && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 max-w-2xl animate-fade-in">
                 <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                   <User size={16} className="text-amber-400" />
                   My Profile
@@ -2354,11 +2414,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                 </form>
               </div>
+              )}
 
-              {/* SUPER ADMIN RESTRICTED AREA */}
-              {loggedInAdmin.role === "SUPER_ADMIN" && (
-                <>
-                  <div className="mt-8 pt-8 border-t border-white/10">
+              {/* SUPER ADMIN RESTRICTED AREA: Administrators */}
+              {loggedInAdmin.role === "SUPER_ADMIN" && activeSettingsTab === "administrators" && (
+                <div className="animate-fade-in">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <h3 className="text-base font-extrabold text-white flex items-center gap-2 mb-6">
                       <Users size={18} className="text-amber-400" />
                       <span>Administrators Management</span>
@@ -2525,8 +2586,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  <div className="mt-8 pt-8 border-t border-white/10">
+              {/* DANGER ZONE */}
+              {loggedInAdmin.role === "SUPER_ADMIN" && activeSettingsTab === "danger" && (
+                <div className="animate-fade-in">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <h3 className="text-base font-extrabold text-white flex items-center gap-2 mb-6">
                       <Shield size={18} className="text-amber-400" />
                       <span>Danger Zone</span>
@@ -2585,11 +2651,255 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     </div>
                   </div>
-                </>
+                </div>
+              )}
+
+              {/* SECURITY & ACCESS */}
+              {activeSettingsTab === "security" && (
+                <div className="animate-fade-in">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-6" id="admin-subtab-security">
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <Key size={18} className="text-amber-400" />
+                      <span>Security & Voting Access</span>
+                    </h3>
+                    <p className="text-xs text-white/60 mt-1 leading-relaxed mb-6">
+                      Manage the Code-as-an-Account voting system. Generate access codes for the voters, enable/disable code requirements, and monitor usage.
+                    </p>
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="text-sm font-bold text-white mb-1">Require Access Code</h4>
+                          <p className="text-xs text-white/60">If enabled, voters will need to enter a 6-digit access code to unlock the voting center.</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const willBeOn = !(securitySettings?.requireAccessCode);
+                            onUpdateSecuritySettings({ 
+                              requireAccessCode: willBeOn,
+                              // Automatically disable Captcha if Access Codes are turned ON
+                              enableCaptcha: willBeOn ? false : securitySettings?.enableCaptcha
+                            });
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${securitySettings?.requireAccessCode ? 'bg-amber-400' : 'bg-white/20'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${securitySettings?.requireAccessCode ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                      <div className={`flex justify-between items-center pt-4 border-t border-white/5 ${securitySettings?.requireAccessCode ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div>
+                          <h4 className="text-sm font-bold text-white mb-1">Enable Bot Protection (Math CAPTCHA)</h4>
+                          <p className="text-xs text-white/60">Provides a basic layer of protection by requiring a simple math test before voting. Only available when Access Codes are OFF.</p>
+                        </div>
+                        <button
+                          disabled={securitySettings?.requireAccessCode}
+                          onClick={() => onUpdateSecuritySettings({ 
+                            requireAccessCode: false,
+                            enableCaptcha: !(securitySettings?.enableCaptcha) 
+                          })}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${securitySettings?.enableCaptcha ? 'bg-amber-400' : 'bg-white/20'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${securitySettings?.enableCaptcha ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {securitySettings?.requireAccessCode && (
+                      <div className="space-y-6 mt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                            <p className="text-xs text-white/60 uppercase tracking-widest font-bold">Total Codes</p>
+                            <p className="text-3xl font-black text-white mt-2">
+                              {codeStats ? (codeStats.total || 0).toLocaleString() : "-"}
+                            </p>
+                          </div>
+                          <div className="bg-amber-400/10 border border-amber-400/20 rounded-xl p-4">
+                            <p className="text-xs text-amber-400/80 uppercase tracking-widest font-bold">Used Codes</p>
+                            <p className="text-3xl font-black text-amber-400 mt-2">
+                              {codeStats ? (codeStats.used || 0).toLocaleString() : "-"}
+                            </p>
+                          </div>
+                          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+                            <p className="text-xs text-green-400/80 uppercase tracking-widest font-bold">Unused Codes</p>
+                            <p className="text-3xl font-black text-green-400 mt-2">
+                              {codeStats ? (codeStats.unused || 0).toLocaleString() : "-"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-4 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              max="5000"
+                              value={generateQty}
+                              onChange={(e) => setGenerateQty(e.target.value)}
+                              disabled={isGeneratingCodes}
+                              className="w-24 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all"
+                            />
+                            <button
+                              disabled={isGeneratingCodes}
+                              onClick={async () => {
+                                const qty = parseInt(generateQty);
+                                if (qty && !isNaN(qty) && qty > 0) {
+                                  setIsGeneratingCodes(true);
+                                  try {
+                                    await onGenerateVotingCodes(qty);
+                                    const stats = await onFetchCodeStats();
+                                    setCodeStats(stats);
+                                    setConfirmModal({
+                                      isOpen: true,
+                                      title: "Codes Generated",
+                                      message: `Successfully generated ${qty} new access codes.`,
+                                      isAlertOnly: true,
+                                      confirmText: "OK",
+                                      onConfirm: () => {}
+                                    });
+                                    setGenerateQty("100");
+                                  } catch(e: any) {
+                                    setConfirmModal({
+                                      isOpen: true,
+                                      title: "Generation Failed",
+                                      message: "Failed to generate codes: " + e.message,
+                                      isAlertOnly: true,
+                                      isDanger: true,
+                                      confirmText: "OK",
+                                      onConfirm: () => {}
+                                    });
+                                  } finally {
+                                    setIsGeneratingCodes(false);
+                                  }
+                                  }
+                                }}
+                                className="bg-amber-400 hover:bg-amber-500 text-black px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 shadow-md disabled:opacity-50"
+                              >
+                                {isGeneratingCodes ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus size={16} />
+                                    Generate Codes
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setIsExportingPDF(true);
+                                try {
+                                  const codes = await onFetchUnusedCodes();
+                                  if (codes.length === 0) {
+                                    setConfirmModal({
+                                      isOpen: true,
+                                      title: "No Codes Available",
+                                      message: "There are no unused codes available to export.",
+                                      isAlertOnly: true,
+                                      confirmText: "OK",
+                                      onConfirm: () => {}
+                                    });
+                                    setIsExportingPDF(false);
+                                    return;
+                                  }
+                                  
+                                  // Generate HTML for printing
+                                  const printWindow = window.open('', '_blank');
+                                  if (!printWindow) {
+                                    throw new Error("Popup blocked. Please allow popups to print/export PDF.");
+                                  }
+                                  
+                                  let tableRows = codes.map((c, i) => `<tr><td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${i + 1}</td><td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; text-align: center;">${c}</td></tr>`).join("");
+                                  
+                                  printWindow.document.write(`
+                                    <html>
+                                      <head>
+                                        <title>Unused Voting Access Codes</title>
+                                        <style>
+                                          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+                                          h1 { text-align: center; color: #111; }
+                                          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                                          th { padding: 10px; background: #f4f4f4; border: 1px solid #ddd; }
+                                          @media print {
+                                            button { display: none; }
+                                          }
+                                        </style>
+                                      </head>
+                                      <body>
+                                        <h1>Unused Voting Access Codes</h1>
+                                        <p style="text-align: center;">Generated on: ${new Date().toLocaleDateString()}</p>
+                                        <table>
+                                          <thead>
+                                            <tr>
+                                              <th style="width: 50px;">#</th>
+                                              <th>Access Code</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            ${tableRows}
+                                          </tbody>
+                                        </table>
+                                        <div style="text-align: center; margin-top: 20px;">
+                                          <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Print / Save as PDF</button>
+                                        </div>
+                                        <script>
+                                          // Auto prompt print dialog once loaded
+                                          window.onload = function() { window.print(); }
+                                        </script>
+                                      </body>
+                                    </html>
+                                  `);
+                                  printWindow.document.close();
+                                  
+                                } catch (e: any) {
+                                  setConfirmModal({
+                                    isOpen: true,
+                                    title: "Export Error",
+                                    message: e.message || "Failed to generate PDF.",
+                                    isAlertOnly: true,
+                                    isDanger: true,
+                                    confirmText: "OK",
+                                    onConfirm: () => {}
+                                  });
+                                } finally {
+                                  setIsExportingPDF(false);
+                                }
+                              }}
+                              disabled={isExportingPDF}
+                              className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                              {isExportingPDF ? (
+                                <>
+                                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                  Exporting...
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={16} />
+                                  Export Unused Codes (PDF)
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                setIsRefreshingStats(true);
+                                await onFetchCodeStats();
+                                setTimeout(() => setIsRefreshingStats(false), 500);
+                              }}
+                              disabled={isRefreshingStats}
+                              className="bg-white/5 hover:bg-white/10 text-white p-2 rounded-xl transition-colors disabled:opacity-50"
+                              title="Refresh Stats"
+                            >
+                              <RefreshCw size={20} className={isRefreshingStats ? "animate-spin" : ""} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
               )}
             </div>
           )}
-
         </div>
       </div>
 

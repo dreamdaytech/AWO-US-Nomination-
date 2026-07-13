@@ -86,6 +86,17 @@ export interface TimelineSettings {
   resultsVisible?: boolean;
 }
 
+export interface SecuritySettings {
+  requireAccessCode: boolean;
+  enableCaptcha?: boolean;
+}
+
+export interface VotingCode {
+  id: number;
+  code: string;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   author: string;

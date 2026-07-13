@@ -13,7 +13,7 @@ import { VotingSection } from "./components/VotingSection";
 import { ResultsSection } from "./components/ResultsSection";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { INITIAL_NOMINEES, CONTACT_INFO } from "./data";
-import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, Category } from "./types";
+import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, Category, SecuritySettings } from "./types";
 import { parseLocalDateTime } from "./utils";
 import { supabase } from "./supabase";
 import { dbService, toCategory } from "./dbService";
@@ -42,7 +42,7 @@ export default function App() {
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.has("nominee")) return "vote";
     }
-    return "overview";
+    return localStorage.getItem("awol_active_tab") || "overview";
   });
 
   // Admin login state
@@ -83,6 +83,11 @@ export default function App() {
     ceremony: "2026-09-05T18:00:00",
   });
 
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({ requireAccessCode: false });
+  const [activeAccessCode, setActiveAccessCode] = useState<string | null>(() => {
+    return localStorage.getItem("awol_active_access_code");
+  });
+
   // Guestbook Congratulations Messages
   const [guestbookMessages, setGuestbookMessages] = useState<Message[]>([]);
 
@@ -92,18 +97,39 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isSystemReady, setIsSystemReady] = useState(false);
 
+  // CAPTCHA State
+  const [pendingVote, setPendingVote] = useState<{ categoryId: number, nomineeId: string } | null>(null);
+  const [captchaQuestion, setCaptchaQuestion] = useState<{ num1: number, num2: number }>({ num1: 0, num2: 0 });
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [captchaError, setCaptchaError] = useState("");
+
+  const generateCaptcha = () => {
+    setCaptchaQuestion({
+      num1: Math.floor(Math.random() * 10) + 1,
+      num2: Math.floor(Math.random() * 10) + 1
+    });
+    setCaptchaAnswer("");
+    setCaptchaError("");
+  };
+
   // Setup Firestore listeners
   useEffect(() => {
     let settingsReady = false;
     let dateReady = false;
     let categoriesReady = false;
+    let secReady = false;
     const checkReady = () => {
-      if (settingsReady && dateReady && categoriesReady) setIsSystemReady(true);
+      if (settingsReady && dateReady && categoriesReady && secReady) setIsSystemReady(true);
     };
 
     const unsubSettings = dbService.listenToSettings(
       (settings) => setTimelineSettings(settings),
       () => { settingsReady = true; checkReady(); }
+    );
+    
+    const unsubSecurity = dbService.listenToSecuritySettings(
+      (settings) => setSecuritySettings(settings),
+      () => { secReady = true; checkReady(); }
     );
     
     const unsubAdmins = dbService.listenToAdmins((admins) => {
@@ -140,6 +166,7 @@ export default function App() {
 
     return () => {
       unsubSettings();
+      unsubSecurity();
       unsubAdmins();
       unsubDate();
       unsubCategories();
@@ -154,6 +181,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("awol_user_votes", JSON.stringify(userVotes));
   }, [userVotes]);
+
+  useEffect(() => {
+    if (activeAccessCode) {
+      localStorage.setItem("awol_active_access_code", activeAccessCode);
+    } else {
+      localStorage.removeItem("awol_active_access_code");
+    }
+  }, [activeAccessCode]);
 
   // 2. LIFECYCLE / PHASE RESOLUTION BASED ON SIMULATED DATE
   const getSystemPhase = (date: Date): { phase: SystemPhase; label: string } => {
@@ -229,15 +264,70 @@ export default function App() {
   };
 
   const handleCastVote = async (categoryId: number, nomineeId: string) => {
-    // Record vote in user's browser ballot
-    setUserVotes((prev) => {
-      const filtered = prev.filter((v) => v.categoryId !== categoryId);
-      return [...filtered, { categoryId, nomineeId }];
-    });
+    try {
+      const nom = nominees.find(n => n.id === nomineeId);
+      if (!nom) return;
 
-    const nom = nominees.find(n => n.id === nomineeId);
-    if (nom) {
-      await dbService.incrementNomineeVotes(nom.id, 1);
+      if (securitySettings.requireAccessCode) {
+        if (!activeAccessCode) {
+          alert("Session expired or missing access code.");
+          return;
+        }
+        await dbService.castVoteWithCode(activeAccessCode, categoryId, nom.id);
+      } else {
+        if (securitySettings.enableCaptcha) {
+          // Trigger CAPTCHA instead of direct vote
+          setPendingVote({ categoryId, nomineeId });
+          generateCaptcha();
+          return; // Stop execution here until CAPTCHA is solved
+        } else {
+          // Direct open vote
+          await dbService.incrementNomineeVotes(nom.id, 1);
+        }
+      }
+
+      // Record vote in user's browser ballot
+      setUserVotes((prev) => {
+        const filtered = prev.filter((v) => v.categoryId !== categoryId);
+        return [...filtered, { categoryId, nomineeId }];
+      });
+    } catch (e: any) {
+      alert(e.message || "Failed to cast vote.");
+    }
+  };
+
+  const handleCaptchaVerify = async () => {
+    if (!pendingVote) return;
+    
+    if (parseInt(captchaAnswer) === (captchaQuestion.num1 + captchaQuestion.num2)) {
+      try {
+        const nom = nominees.find(n => n.id === pendingVote.nomineeId);
+        if (nom) {
+          await dbService.incrementNomineeVotes(nom.id, 1);
+          // Record vote in user's browser ballot
+          setUserVotes((prev) => {
+            const filtered = prev.filter((v) => v.categoryId !== pendingVote.categoryId);
+            return [...filtered, { categoryId: pendingVote.categoryId, nomineeId: pendingVote.nomineeId }];
+          });
+        }
+        setPendingVote(null); // Success, close modal
+      } catch (e: any) {
+        alert(e.message || "Failed to cast vote.");
+        generateCaptcha(); // Reset CAPTCHA on error
+      }
+    } else {
+      setCaptchaError("Incorrect answer. Please try again.");
+      generateCaptcha();
+    }
+  };
+
+  const handleAccessCodeVerified = async (code: string) => {
+    try {
+      const restoredVotes = await dbService.fetchVotesForCode(code);
+      setUserVotes(restoredVotes);
+      setActiveAccessCode(code);
+    } catch (e: any) {
+      throw e; // Let the UI handle the error alert
     }
   };
 
@@ -471,6 +561,9 @@ export default function App() {
               onNavigateToResults={() => setActiveTab("results")}
               onNavigateToNominate={() => setActiveTab("nominate")}
               isAdminLoggedIn={isAdminLoggedIn}
+              securitySettings={securitySettings}
+              activeAccessCode={activeAccessCode}
+              onAccessCodeVerified={handleAccessCodeVerified}
             />
           </div>
         )}
@@ -615,6 +708,11 @@ export default function App() {
               onAddAdmin={dbService.addAdmin}
               onUpdateAdmin={dbService.updateAdmin}
               onDeleteAdmin={dbService.deleteAdmin}
+              securitySettings={securitySettings}
+              onUpdateSecuritySettings={async (settings) => await dbService.updateSecuritySettings(settings)}
+              onGenerateVotingCodes={async (qty) => await dbService.generateVotingCodes(qty)}
+              onFetchCodeStats={async () => await dbService.fetchCodeStats()}
+              onFetchUnusedCodes={async () => await dbService.fetchUnusedCodes()}
             />
             )}
           </div>
@@ -640,6 +738,67 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* CAPTCHA MODAL */}
+      {pendingVote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#121212] border border-white/10 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-scale-in">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-400/10 flex items-center justify-center">
+                  <Shield className="text-amber-400" size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white leading-tight">Security Check</h3>
+                  <p className="text-xs text-white/50 font-medium">Verify you are human</p>
+                </div>
+              </div>
+              
+              <div className="bg-black/40 border border-white/5 rounded-xl p-5 text-center mb-5">
+                <p className="text-sm text-white/60 mb-2 font-medium">Please solve this simple math equation:</p>
+                <div className="flex items-center justify-center gap-4">
+                  <span className="text-3xl font-black text-white">{captchaQuestion.num1}</span>
+                  <span className="text-2xl text-amber-400 font-bold">+</span>
+                  <span className="text-3xl font-black text-white">{captchaQuestion.num2}</span>
+                  <span className="text-2xl text-amber-400 font-bold">=</span>
+                  <input
+                    type="number"
+                    value={captchaAnswer}
+                    onChange={(e) => {
+                      setCaptchaAnswer(e.target.value);
+                      setCaptchaError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCaptchaVerify();
+                    }}
+                    className="w-20 bg-white/5 border-2 border-white/10 rounded-xl px-3 py-2 text-2xl font-black text-center text-white focus:bg-white/10 focus:border-amber-400 focus:outline-none transition-all"
+                    autoFocus
+                  />
+                </div>
+                {captchaError && (
+                  <p className="text-xs font-bold text-red-400 mt-3 animate-fade-in">{captchaError}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setPendingVote(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-white hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCaptchaVerify}
+                  disabled={!captchaAnswer}
+                  className="bg-amber-400 hover:bg-amber-300 disabled:opacity-50 disabled:hover:bg-amber-400 text-black px-6 py-2.5 rounded-xl text-xs font-black transition-colors"
+                >
+                  Verify & Vote
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

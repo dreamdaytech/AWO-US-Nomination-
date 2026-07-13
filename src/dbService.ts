@@ -14,6 +14,9 @@ import {
   GroupingAuditLog,
   AdminUser,
   Category,
+  SecuritySettings,
+  VotingCode,
+  UserVote,
 } from "./types";
 
 // ─── Helper: convert snake_case DB rows → camelCase app types ────────────────
@@ -169,6 +172,106 @@ export const dbService = {
       )
       .subscribe();
     return makeUnsubscribe(channel);
+  },
+
+  listenToSecuritySettings: (callback: (settings: SecuritySettings) => void, onReady?: () => void): Unsubscribe => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("settings").select("*").eq("key", "security").single();
+        if (data) callback(data.value as SecuritySettings);
+        else callback({ requireAccessCode: false });
+      } catch (e) {
+        console.error("Error fetching security settings:", e);
+        callback({ requireAccessCode: false });
+      } finally {
+        if (onReady) onReady();
+      }
+    })();
+    const channel = supabase
+      .channel("settings-security")
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: "key=eq.security" },
+        (payload: any) => {
+          const row = payload.new ?? payload.old;
+          if (row?.value) callback(row.value as SecuritySettings);
+        }
+      )
+      .subscribe();
+    return makeUnsubscribe(channel);
+  },
+
+  updateSecuritySettings: async (settings: SecuritySettings) => {
+    const { error } = await supabase
+      .from("settings")
+      .upsert({ key: "security", value: settings }, { onConflict: "key" });
+    if (error) throw error;
+  },
+
+  generateVotingCodes: async (quantity: number): Promise<void> => {
+    const codes = [];
+    for (let i = 0; i < quantity; i++) {
+      const codeStr = Math.floor(100000 + Math.random() * 900000).toString();
+      codes.push({ code: codeStr });
+    }
+    const { error } = await supabase.from("voting_codes").upsert(codes, { onConflict: "code", ignoreDuplicates: true });
+    if (error) throw error;
+  },
+
+  fetchCodeStats: async (): Promise<{ total: number, used: number, unused: number }> => {
+    const { count: total, error: err1 } = await supabase.from("voting_codes").select("*", { count: "exact", head: true });
+    if (err1) throw err1;
+    
+    const { data: voteData, error: err2 } = await supabase.from("votes").select("code");
+    if (err2) throw err2;
+    
+    const usedCodesSet = new Set(voteData?.map((v) => v.code) || []);
+    const used = usedCodesSet.size;
+    const unused = (total || 0) - used;
+    return { total: total || 0, used, unused };
+  },
+
+  fetchUnusedCodes: async (): Promise<string[]> => {
+    // To find unused codes, we get all codes, and all used codes, and subtract.
+    // In production with millions of rows, we'd use an RPC or left join. 
+    // But since Supabase REST doesn't do NOT IN easily without an RPC, we will do it here for now.
+    const { data: allCodes, error: err1 } = await supabase.from("voting_codes").select("code");
+    if (err1) throw err1;
+    
+    const { data: voteData, error: err2 } = await supabase.from("votes").select("code");
+    if (err2) throw err2;
+
+    const usedCodesSet = new Set(voteData?.map((v) => v.code) || []);
+    return (allCodes || [])
+      .filter((row) => !usedCodesSet.has(row.code))
+      .map((row) => row.code);
+  },
+
+  fetchVotesForCode: async (code: string): Promise<UserVote[]> => {
+    // 1. Check if code is valid
+    const { data: codeData, error: codeErr } = await supabase.from("voting_codes").select("code").eq("code", code).single();
+    if (codeErr || !codeData) throw new Error("Invalid access code");
+
+    // 2. Fetch votes
+    const { data, error } = await supabase.from("votes").select("*").eq("code", code);
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      categoryId: row.category_id,
+      nomineeId: row.nominee_id,
+    }));
+  },
+
+  castVoteWithCode: async (code: string, categoryId: number, nomineeId: string) => {
+    const { error } = await supabase.rpc("cast_vote", {
+      p_code: code,
+      p_category_id: categoryId,
+      p_nominee_id: nomineeId,
+    });
+    if (error) {
+      if (error.message.includes("violates unique constraint")) {
+        throw new Error("You have already voted in this category.");
+      }
+      throw error;
+    }
   },
 
   listenToDate: (callback: (date: string) => void, onReady?: () => void): Unsubscribe => {

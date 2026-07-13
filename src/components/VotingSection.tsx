@@ -4,9 +4,9 @@
  */
 
 import React, { useState } from "react";
-import { Category, Nominee, UserVote, SystemPhase, TimelineSettings, NomineeGroup } from "../types";
+import { Category, Nominee, UserVote, SystemPhase, TimelineSettings, NomineeGroup, SecuritySettings } from "../types";
 import { CategoryIcon } from "./CategoryIcon";
-import { Check, Vote, AlertTriangle, ShieldCheck, Lock, Award, Heart, Search, Filter, SlidersHorizontal, Share2, Twitter, Facebook } from "lucide-react";
+import { Check, Vote, AlertTriangle, ShieldCheck, Lock, Award, Heart, Search, Filter, SlidersHorizontal, Share2, Twitter, Facebook, Key } from "lucide-react";
 import { formatDateTime, parseLocalDateTime } from "../utils";
 
 interface VotingSectionProps {
@@ -21,6 +21,9 @@ interface VotingSectionProps {
   onNavigateToNominate?: () => void;
   isAdminLoggedIn?: boolean;
   nomineeGroups?: NomineeGroup[];
+  securitySettings?: SecuritySettings;
+  activeAccessCode?: string | null;
+  onAccessCodeVerified?: (code: string) => Promise<void>;
 }
 
 export const VotingSection: React.FC<VotingSectionProps> = ({
@@ -35,6 +38,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   onNavigateToNominate,
   nomineeGroups,
   isAdminLoggedIn,
+  securitySettings,
+  activeAccessCode,
+  onAccessCodeVerified,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all"); // "all", or a category ID
@@ -43,7 +49,29 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   const [justVotedId, setJustVotedId] = useState<string | null>(null);
   const [voteConfirmation, setVoteConfirmation] = useState<{ categoryId: number; nomineeId: string; nomineeName: string; categoryName: string } | null>(null);
 
+  const [inputCode, setInputCode] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
 
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onAccessCodeVerified) return;
+    if (inputCode.trim().length !== 6) {
+      setVerifyError("Code must be exactly 6 digits.");
+      return;
+    }
+    
+    setIsVerifying(true);
+    setVerifyError("");
+    try {
+      await onAccessCodeVerified(inputCode.trim());
+      // Verification successful, App.tsx sets activeAccessCode which will unmount this screen
+    } catch (err: any) {
+      setVerifyError(err.message || "Invalid or used access code.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
   
   const approvedGroups = (nomineeGroups || []).filter(g => g.approved);
   const groupedNominationIds = new Set(approvedGroups.flatMap(g => g.nominationIds));
@@ -176,7 +204,43 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
 
   return (
     <div className="space-y-8 animate-fade-in" id="voting-system-container">
-      {(!isAdminLoggedIn && isBeforeVoting) ? (
+      {(securitySettings?.requireAccessCode && !activeAccessCode && !isAdminLoggedIn) ? (
+        <div className="w-full bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8 sm:p-12 shadow-2xl text-center space-y-6 max-w-xl mx-auto">
+          <div className="mx-auto w-16 h-16 bg-amber-400/10 rounded-full flex items-center justify-center border border-amber-400/20 mb-4">
+            <Key className="text-amber-400" size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">Voting Access Code Required</h2>
+          <p className="text-white/70 max-w-sm mx-auto leading-relaxed text-sm">
+            This voting session is protected. Please enter your 6-digit access code to unlock the Voting Center and cast your votes.
+          </p>
+          <form onSubmit={handleVerifyCode} className="space-y-4 pt-4">
+            <div>
+              <input
+                type="text"
+                placeholder="Enter 6-digit code"
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value)}
+                maxLength={6}
+                className="w-full max-w-xs mx-auto text-center bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-2xl tracking-[0.2em] font-mono text-white placeholder-white/30 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/20 transition-all uppercase"
+                disabled={isVerifying}
+              />
+            </div>
+            {verifyError && (
+              <p className="text-red-400 text-sm font-bold flex items-center justify-center gap-1.5 animate-shake">
+                <AlertTriangle size={14} />
+                {verifyError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={isVerifying || inputCode.length !== 6}
+              className="bg-amber-400 hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-black px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-400/20 uppercase tracking-widest text-sm"
+            >
+              {isVerifying ? "Verifying..." : "Unlock Voting Center"}
+            </button>
+          </form>
+        </div>
+      ) : (!isAdminLoggedIn && isBeforeVoting) ? (
         <div className="w-full bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8 sm:p-12 shadow-2xl text-center space-y-6">
           <div className="mx-auto w-16 h-16 bg-amber-400/10 rounded-full flex items-center justify-center border border-amber-400/20 mb-4">
             <Lock className="text-amber-400" size={32} />

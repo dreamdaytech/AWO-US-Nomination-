@@ -13,7 +13,7 @@ import { VotingSection } from "./components/VotingSection";
 import { ResultsSection } from "./components/ResultsSection";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { INITIAL_NOMINEES, CONTACT_INFO } from "./data";
-import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, Category, SecuritySettings } from "./types";
+import { SystemPhase, Nomination, NominationInput, UserVote, Message, Nominee, TimelineSettings, NomineeGroup, GroupingAuditLog, AdminUser, Category, SecuritySettings, GeneralContentSettings } from "./types";
 import { parseLocalDateTime } from "./utils";
 import { supabase } from "./supabase";
 import { dbService, toCategory } from "./dbService";
@@ -97,11 +97,39 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isSystemReady, setIsSystemReady] = useState(false);
 
+  const [generalContent, setGeneralContent] = useState<GeneralContentSettings>({
+    contactEmail: CONTACT_INFO.email,
+    contactWebsite: CONTACT_INFO.website,
+    contactWebsiteUrl: CONTACT_INFO.websiteUrl,
+    contactPhone: CONTACT_INFO.telephone,
+    contactFormsUrl: CONTACT_INFO.formsAppUrl,
+    chairmanName: CONTACT_INFO.chairman,
+    chairmanTitle: CONTACT_INFO.title,
+    awardsTitle: "AWOL AMERICA 10th Annual Achievement Awards",
+    invitationTitle: "Official Invitation & Bulletin",
+    letterBody: `We are pleased to announce the initiation of the nomination and voting process for the esteemed AWOL AMERICA 10th Annual Achievement Awards ceremony, scheduled for {ceremonyDate}.
+
+The AWOL AMERICA Achievement Awards have consistently recognized exceptional individuals, organizations, and initiatives that have made significant contributions to society, inspiring positive change within the community. This year, we look forward to honoring those whose extraordinary efforts have left a lasting impact on the world.
+
+Nominations may be submitted by fellow members, the public, or through self-nomination. Please share your rationale for the nomination and highlight the nominee's achievements, dedication, and commitment to fostering a better world.
+
+The nomination period will commence on {nominationStartDate} and will remain open until {nominationEndDate}. We encourage you to act promptly to honor those who have made a significant impact on our society. Following the nomination phase, the voting period will take place from {votingDateRange}.
+
+As we prepare for this momentous occasion, we extend our heartfelt gratitude to all our supporters and patrons, whose contributions make these awards possible. Join us on {ceremonyDate}, as we celebrate the exceptional achievements of our nominees and commend their unwavering dedication to a better tomorrow.
+
+Thank you for your continued support. Together, let us embrace the spirit of positive change and recognize those who embody the core values of AWOL AMERICA.`
+  });
+
   // CAPTCHA State
   const [pendingVote, setPendingVote] = useState<{ categoryId: number, nomineeId: string } | null>(null);
   const [captchaQuestion, setCaptchaQuestion] = useState<{ num1: number, num2: number }>({ num1: 0, num2: 0 });
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaError, setCaptchaError] = useState("");
+
+  // Payment State
+  const [hasPaymentAccess, setHasPaymentAccess] = useState<boolean>(() => {
+    return !!sessionStorage.getItem("awol_payment_access");
+  });
 
   const generateCaptcha = () => {
     setCaptchaQuestion({
@@ -110,6 +138,54 @@ export default function App() {
     });
     setCaptchaAnswer("");
     setCaptchaError("");
+  };
+
+  // Handle Monime Payment Returns from URL parameters
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const searchParams = new URLSearchParams(window.location.search);
+    
+    if (searchParams.get("payment_success") === "true") {
+      const mode = searchParams.get("payment_mode");
+      
+      if (mode === "one_time") {
+        setHasPaymentAccess(true);
+        sessionStorage.setItem("awol_payment_access", "true");
+        alert("Payment successful! You can now cast your votes.");
+      } else if (mode === "per_vote") {
+        const categoryId = parseInt(searchParams.get("categoryId") || "0");
+        const nomineeId = searchParams.get("nomineeId");
+        if (categoryId && nomineeId) {
+          // Since we now use a secure webhook, the backend Edge Function will increment the vote.
+          // We only need to update the local UI state so the user sees their vote as counted immediately.
+          setUserVotes((prev) => {
+            const filtered = prev.filter((v) => v.categoryId !== categoryId);
+            return [...filtered, { categoryId, nomineeId }];
+          });
+          alert("Payment successful! Your vote is securely recorded.");
+        }
+      }
+
+      // Clean up the URL
+      const newUrl = window.location.pathname + "?tab=vote";
+      window.history.replaceState({}, document.title, newUrl);
+    } else if (searchParams.get("payment_cancelled") === "true") {
+      alert("Payment was cancelled.");
+      const newUrl = window.location.pathname + "?tab=vote";
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
+
+  const handleInitiatePayment = async ({ mode, nomineeId, categoryId }: { mode: "one_time" | "per_vote", nomineeId?: string, categoryId?: number }) => {
+    if (!securitySettings.paymentAmount) throw new Error("Payment amount not configured.");
+    const { checkoutUrl } = await dbService.createMonimeCheckout({
+      amount: securitySettings.paymentAmount,
+      currency: securitySettings.paymentCurrency || "SLE",
+      mode,
+      nomineeId,
+      categoryId
+    });
+    return checkoutUrl;
   };
 
   // Setup Firestore listeners
@@ -134,6 +210,12 @@ export default function App() {
     
     const unsubAdmins = dbService.listenToAdmins((admins) => {
       setDbAdmins(admins);
+    });
+    
+    const unsubGeneralContent = dbService.listenToGeneralContent((content) => {
+      if (content) {
+        setGeneralContent(content);
+      }
     });
     
     const unsubDate = dbService.listenToDate(
@@ -168,6 +250,7 @@ export default function App() {
       unsubSettings();
       unsubSecurity();
       unsubAdmins();
+      unsubGeneralContent();
       unsubDate();
       unsubCategories();
       unsubNoms();
@@ -479,6 +562,7 @@ export default function App() {
         setActiveTab={setActiveTab} 
         timelineSettings={timelineSettings}
         simulatedDate={simulatedDate}
+        generalContent={generalContent}
       />
 
       {/* MAIN APPLICATION STAGE */}
@@ -490,7 +574,7 @@ export default function App() {
         {activeTab === "overview" && (
           <div className="space-y-8 animate-fade-in" id="overview-tab-content">
             {/* Invitation Letter from the Chairman */}
-            <ChairmanMessage timelineSettings={timelineSettings} />
+            <ChairmanMessage timelineSettings={timelineSettings} generalContent={generalContent} />
 
             {/* Category Listing Section Intro */}
             <div className="space-y-2">
@@ -541,6 +625,7 @@ export default function App() {
               currentPhase={phase}
               timelineSettings={timelineSettings}
               simulatedDate={simulatedDate}
+              generalContent={generalContent}
               onNavigateToVote={() => setActiveTab("vote")}
             />
           </div>
@@ -564,6 +649,8 @@ export default function App() {
               securitySettings={securitySettings}
               activeAccessCode={activeAccessCode}
               onAccessCodeVerified={handleAccessCodeVerified}
+              onInitiatePayment={handleInitiatePayment}
+              hasPaymentAccess={hasPaymentAccess}
             />
           </div>
         )}
@@ -686,6 +773,8 @@ export default function App() {
               phaseLabel={phaseLabel}
               timelineSettings={timelineSettings}
               onUpdateTimelineSettings={handleUpdateSettings}
+              generalContent={generalContent}
+              onUpdateGeneralContent={async (settings) => await dbService.updateGeneralContent(settings)}
               onSetSimulatedDate={handleUpdateSimulatedDate}
               onToggleApproveNomination={handleToggleApproveNomination}
               onDeclineNomination={handleDeclineNomination}
@@ -722,13 +811,20 @@ export default function App() {
       {/* FOOTER & BRAND LEGAL CHANNELS */}
       <footer className="bg-black/40 text-white/40 text-xs py-8 px-4 sm:px-6 border-t border-white/10 mt-16 relative z-10 backdrop-blur-md" id="app-footer">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="space-y-1.5 text-center md:text-left">
-            <p className="font-sans font-bold text-white tracking-widest text-[11px] uppercase">
-              AWOL AMERICA
-            </p>
-            <p className="text-[10px] text-white/30 font-light">
-              All Rights Reserved. © 2026 Association for the Well-Being of Sierra Leoneans (AWOL) America.
-            </p>
+          <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4 text-center md:text-left">
+            <img 
+              src="/logo.png" 
+              alt="AWOL AMERICA Logo" 
+              className="h-10 w-auto object-contain opacity-60 hover:opacity-100 transition-opacity drop-shadow-sm" 
+            />
+            <div className="space-y-1">
+              <p className="font-sans font-bold text-white tracking-widest text-[11px] uppercase">
+                AWOL AMERICA
+              </p>
+              <p className="text-[10px] text-white/40 font-light">
+                All Rights Reserved. © 2026 Association for the Well-Being of Sierra Leoneans (AWOL) America.
+              </p>
+            </div>
           </div>
           
           <div className="text-center md:text-right">

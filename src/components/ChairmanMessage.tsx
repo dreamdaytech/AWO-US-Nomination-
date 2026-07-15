@@ -4,17 +4,55 @@
  */
 
 import React, { useState } from "react";
-import { Mail, Phone, Globe, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Mail, Phone, Globe, ChevronDown, ChevronUp, FileText, X } from "lucide-react";
 import { CONTACT_INFO } from "../data";
-import { TimelineSettings } from "../types";
+import { TimelineSettings, GeneralContentSettings } from "../types";
 import { formatDateTime } from "../utils";
 
 interface ChairmanMessageProps {
   timelineSettings?: TimelineSettings;
+  generalContent?: GeneralContentSettings;
 }
 
-export const ChairmanMessage: React.FC<ChairmanMessageProps> = ({ timelineSettings }) => {
+export const ChairmanMessage: React.FC<ChairmanMessageProps> = ({ timelineSettings, generalContent }) => {
   const [isOpen, setIsOpen] = useState(true);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
+  // Helper to replace placeholders in text and apply rich formatting
+  const processText = (text: string) => {
+    // 1. Basic HTML escape to prevent XSS
+    let processed = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // 2. Bold syntax support: **text**
+    processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">$1</strong>');
+
+    // 3. Auto-highlight the Awards Title if present
+    const awardsTitle = generalContent?.awardsTitle || "AWOL AMERICA 10th Annual Achievement Awards";
+    if (awardsTitle && awardsTitle.trim() !== "") {
+      const escapedTitle = awardsTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const titleRegex = new RegExp(`(${escapedTitle})`, 'g');
+      processed = processed.replace(titleRegex, '<strong class="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">$1</strong>');
+    }
+
+    // 4. Style dates
+    if (timelineSettings) {
+      processed = processed.replace(/{ceremonyDate}/g, `<span class="text-white font-medium underline decoration-amber-500/30">${formatDateTime(timelineSettings.ceremony)}</span>`);
+      processed = processed.replace(/{nominationStartDate}/g, `<span class="text-white font-medium">${formatDateTime(timelineSettings.nominationStart)}</span>`);
+      processed = processed.replace(/{nominationEndDate}/g, `<span class="text-white font-medium">${formatDateTime(timelineSettings.nominationEnd)}</span>`);
+      processed = processed.replace(/{votingDateRange}/g, `<span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">${formatDateTime(timelineSettings.votingStart)} to ${formatDateTime(timelineSettings.votingEnd)}</span>`);
+    } else {
+      processed = processed.replace(/{ceremonyDate}/g, '<span class="text-white font-medium underline decoration-amber-500/30">Saturday, September 5, 2026</span>');
+      processed = processed.replace(/{nominationStartDate}/g, '<span class="text-white font-medium">Friday, July 10, 2026</span>');
+      processed = processed.replace(/{nominationEndDate}/g, '<span class="text-white font-medium">Thursday, July 30, 2026</span>');
+      processed = processed.replace(/{votingDateRange}/g, '<span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">Friday, July 31 to Tuesday, August 25, 2026</span>');
+    }
+    return processed;
+  };
+
+  const paragraphs = (generalContent?.letterBody || "").split('\n\n').filter(p => p.trim());
 
   return (
     <div className="bg-white/5 text-white rounded-2xl border border-white/10 backdrop-blur-xl shadow-2xl overflow-hidden mb-8" id="chairman-message-container">
@@ -30,10 +68,10 @@ export const ChairmanMessage: React.FC<ChairmanMessageProps> = ({ timelineSettin
           </div>
           <div>
             <h3 className="font-sans font-extrabold text-white text-base tracking-tight">
-              Official Invitation & Bulletin
+              {generalContent?.invitationTitle || "Official Invitation & Bulletin"}
             </h3>
             <p className="text-xs text-white/50 mt-0.5">
-              Read the letter from AWOL AMERICA Chairman Mohamed Majid Kamara
+              Read the letter from {generalContent?.chairmanName || CONTACT_INFO.chairman}
             </p>
           </div>
         </div>
@@ -47,43 +85,58 @@ export const ChairmanMessage: React.FC<ChairmanMessageProps> = ({ timelineSettin
             {/* Letter Metadata */}
             <div className="flex flex-col sm:flex-row sm:justify-between border-b border-white/10 pb-4 mb-4 text-xs font-mono text-white/40">
               <span>Date: {timelineSettings ? formatDateTime(timelineSettings.announcementStart, "short") : "July 3, 2026"}</span>
-              <span>Subject: AWOL AMERICA 10th Annual Achievement Awards</span>
+              <span>Subject: {generalContent?.awardsTitle || "AWOL AMERICA 10th Annual Achievement Awards"}</span>
             </div>
 
-            <p className="font-semibold text-white">Dear Supporters, Patrons, and Community Members,</p>
-
-            <p>
-              We are pleased to announce the initiation of the nomination and voting process for the esteemed{" "}
-              <strong className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">AWOL AMERICA 10th Annual Achievement Awards</strong> ceremony, scheduled for{" "}
-              <span className="text-white font-medium underline decoration-amber-500/30">{timelineSettings ? formatDateTime(timelineSettings.ceremony) : "Saturday, September 5, 2026"}</span>.
-            </p>
-
-            <p>
-              The AWOL AMERICA Achievement Awards have consistently recognized exceptional individuals, organizations, and initiatives that have made significant contributions to society, inspiring positive change within the community. This year, we look forward to honoring those whose extraordinary efforts have left a lasting impact on the world.
-            </p>
-
-            <p>
-              Nominations may be submitted by fellow members, the public, or through self-nomination. Please share your rationale for the nomination and highlight the nominee's achievements, dedication, and commitment to fostering a better world.
-            </p>
-
-            <p>
-              The nomination period will commence on{" "}
-              <span className="text-white font-medium">{timelineSettings ? formatDateTime(timelineSettings.nominationStart) : "Friday, July 10, 2026"}</span> and will remain open until{" "}
-              <span className="text-white font-medium">{timelineSettings ? formatDateTime(timelineSettings.nominationEnd) : "Thursday, July 30, 2026"}</span>. We encourage you to act promptly to honor those who have made a significant impact on our society. Following the nomination phase, the voting period will take place from{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">{timelineSettings ? `${formatDateTime(timelineSettings.votingStart)} to ${formatDateTime(timelineSettings.votingEnd)}` : "Friday, July 31 to Tuesday, August 25, 2026"}</span>.
-            </p>
-
-            <p>
-              As we prepare for this momentous occasion, we extend our heartfelt gratitude to all our supporters and patrons, whose contributions make these awards possible. Join us on {timelineSettings ? formatDateTime(timelineSettings.ceremony) : "Saturday, September 5, 2026"}, as we celebrate the exceptional achievements of our nominees and commend their unwavering dedication to a better tomorrow.
-            </p>
-
-            <p>Thank you for your continued support. Together, let us embrace the spirit of positive change and recognize those who embody the core values of AWOL AMERICA.</p>
+            {paragraphs.length > 0 ? (
+              paragraphs.map((p, i) => (
+                <p 
+                  key={i} 
+                  className={i === 0 ? "font-semibold text-white" : ""}
+                  dangerouslySetInnerHTML={{ __html: processText(p) }} 
+                />
+              ))
+            ) : (
+              <>
+                <p className="font-semibold text-white">Dear Supporters, Patrons, and Community Members,</p>
+                <p>
+                  We are pleased to announce the initiation of the nomination and voting process for the esteemed{" "}
+                  <strong className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">AWOL AMERICA 10th Annual Achievement Awards</strong> ceremony, scheduled for{" "}
+                  <span className="text-white font-medium underline decoration-amber-500/30">{timelineSettings ? formatDateTime(timelineSettings.ceremony) : "Saturday, September 5, 2026"}</span>.
+                </p>
+                <p>
+                  The AWOL AMERICA Achievement Awards have consistently recognized exceptional individuals, organizations, and initiatives that have made significant contributions to society, inspiring positive change within the community. This year, we look forward to honoring those whose extraordinary efforts have left a lasting impact on the world.
+                </p>
+                <p>
+                  Nominations may be submitted by fellow members, the public, or through self-nomination. Please share your rationale for the nomination and highlight the nominee's achievements, dedication, and commitment to fostering a better world.
+                </p>
+                <p>
+                  The nomination period will commence on{" "}
+                  <span className="text-white font-medium">{timelineSettings ? formatDateTime(timelineSettings.nominationStart) : "Friday, July 10, 2026"}</span> and will remain open until{" "}
+                  <span className="text-white font-medium">{timelineSettings ? formatDateTime(timelineSettings.nominationEnd) : "Thursday, July 30, 2026"}</span>. We encourage you to act promptly to honor those who have made a significant impact on our society. Following the nomination phase, the voting period will take place from{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 font-bold">{timelineSettings ? `${formatDateTime(timelineSettings.votingStart)} to ${formatDateTime(timelineSettings.votingEnd)}` : "Friday, July 31 to Tuesday, August 25, 2026"}</span>.
+                </p>
+                <p>
+                  As we prepare for this momentous occasion, we extend our heartfelt gratitude to all our supporters and patrons, whose contributions make these awards possible. Join us on {timelineSettings ? formatDateTime(timelineSettings.ceremony) : "Saturday, September 5, 2026"}, as we celebrate the exceptional achievements of our nominees and commend their unwavering dedication to a better tomorrow.
+                </p>
+                <p>Thank you for your continued support. Together, let us embrace the spirit of positive change and recognize those who embody the core values of AWOL AMERICA.</p>
+              </>
+            )}
 
             {/* Signature Block */}
             <div className="pt-6 border-t border-white/10 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <p className="font-bold text-white text-base">{CONTACT_INFO.chairman}</p>
-                <p className="text-xs text-amber-400 font-medium">{CONTACT_INFO.title}</p>
+              <div className="flex items-center gap-4">
+                <img 
+                  src="/chairman.png" 
+                  alt={generalContent?.chairmanName || CONTACT_INFO.chairman} 
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-amber-400/50 shadow-lg cursor-pointer hover:scale-105 transition-transform"
+                  onClick={() => setIsImageModalOpen(true)}
+                  title="Click to view larger image"
+                />
+                <div>
+                  <p className="font-bold text-white text-base">{generalContent?.chairmanName || CONTACT_INFO.chairman}</p>
+                  <p className="text-xs text-amber-400 font-medium">{generalContent?.chairmanTitle || CONTACT_INFO.title}</p>
+                </div>
               </div>
               
               {/* Mini Stamp/Badge */}
@@ -92,6 +145,29 @@ export const ChairmanMessage: React.FC<ChairmanMessageProps> = ({ timelineSettin
                 <span className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-amber-400 tracking-widest uppercase">AWOL AMERICA</span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Image Modal */}
+      {isImageModalOpen && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
+          onClick={() => setIsImageModalOpen(false)}
+        >
+          <div className="relative max-w-3xl w-full flex flex-col items-center justify-center animate-fade-in" onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => setIsImageModalOpen(false)}
+              className="absolute -top-12 right-0 md:-right-8 p-2 text-white/50 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10"
+              title="Close"
+            >
+              <X size={24} />
+            </button>
+            <img 
+              src="/chairman.png" 
+              alt={generalContent?.chairmanName || CONTACT_INFO.chairman} 
+              className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl" 
+            />
           </div>
         </div>
       )}

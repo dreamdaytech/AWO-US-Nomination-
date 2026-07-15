@@ -89,6 +89,20 @@ export interface TimelineSettings {
 export interface SecuritySettings {
   requireAccessCode: boolean;
   enableCaptcha?: boolean;
+  requirePayment?: boolean;
+  paymentMode?: "one_time" | "per_vote"; // one_time = pay once to unlock all votes; per_vote = pay for each individual vote
+  paymentAmount?: number; // Amount in the smallest currency unit (e.g., cents for SLE leones)
+  paymentCurrency?: string; // e.g., "SLE"
+}
+
+export interface PaymentSession {
+  id: string;
+  checkoutUrl: string;
+  nomineeId?: string;   // Set for per_vote mode
+  categoryId?: number;  // Set for per_vote mode
+  mode: "one_time" | "per_vote";
+  status: "pending" | "paid" | "cancelled";
+  createdAt: string;
 }
 
 export interface VotingCode {
@@ -111,4 +125,17 @@ export interface AdminUser {
   password?: string;
   role: "SUPER_ADMIN" | "ADMIN";
   createdAt: string;
+}
+
+export interface GeneralContentSettings {
+  contactEmail: string;
+  contactWebsite: string;
+  contactWebsiteUrl: string;
+  contactPhone: string;
+  contactFormsUrl: string;
+  chairmanName: string;
+  chairmanTitle: string;
+  awardsTitle: string;
+  invitationTitle: string;
+  letterBody: string;
 }

@@ -6,7 +6,7 @@
 import React, { useState } from "react";
 import { Mail, Globe, Phone, Award, Clock, Menu, X, Info, FileText, Vote, Trophy, Shield } from "lucide-react";
 import { CONTACT_INFO } from "../data";
-import { SystemPhase, TimelineSettings } from "../types";
+import { SystemPhase, TimelineSettings, GeneralContentSettings } from "../types";
 import { formatDateTime, parseLocalDateTime } from "../utils";
 
 interface HeaderProps {
@@ -17,6 +17,7 @@ interface HeaderProps {
   timelineSettings?: TimelineSettings;
   simulatedDate?: Date;
   isAdminLoggedIn: boolean;
+  generalContent?: GeneralContentSettings;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -26,7 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   timelineSettings,
   simulatedDate,
-  isAdminLoggedIn
+  isAdminLoggedIn,
+  generalContent
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -78,30 +80,30 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Official Contact Credentials */}
           <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-1">
             <a 
-              href={`mailto:${CONTACT_INFO.email}`} 
+              href={`mailto:${generalContent?.contactEmail || CONTACT_INFO.email}`} 
               className="flex items-center gap-1.5 hover:text-amber-400 transition-colors"
               id="header-email-link"
             >
               <Mail size={12} className="text-amber-400" />
-              <span>{CONTACT_INFO.email}</span>
+              <span>{generalContent?.contactEmail || CONTACT_INFO.email}</span>
             </a>
             <a 
-              href={CONTACT_INFO.websiteUrl} 
+              href={generalContent?.contactWebsiteUrl || CONTACT_INFO.websiteUrl} 
               target="_blank" 
               rel="noopener noreferrer" 
               className="flex items-center gap-1.5 hover:text-amber-400 transition-colors"
               id="header-website-link"
             >
               <Globe size={12} className="text-amber-400" />
-              <span>{CONTACT_INFO.website}</span>
+              <span>{generalContent?.contactWebsite || CONTACT_INFO.website}</span>
             </a>
             <a 
-              href={`tel:${CONTACT_INFO.telephone}`} 
+              href={`tel:${generalContent?.contactPhone || CONTACT_INFO.telephone}`} 
               className="flex items-center gap-1.5 hover:text-amber-400 transition-colors"
               id="header-phone-link"
             >
               <Phone size={12} className="text-amber-400" />
-              <span>{CONTACT_INFO.telephone}</span>
+              <span>{generalContent?.contactPhone || CONTACT_INFO.telephone}</span>
             </a>
           </div>
 
@@ -124,15 +126,12 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center gap-3 hover:opacity-90 transition-opacity text-left cursor-pointer bg-transparent border-none p-0 outline-none"
           id="navbar-logo-btn"
         >
-          <div className="relative w-8 h-8 bg-gradient-to-tr from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-black text-black text-sm shadow-md shadow-amber-500/10">
-            A
-            <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-white text-[7px] font-bold text-black border border-amber-500">
-              ★
-            </span>
-          </div>
-          <div>
+          <img src="/logo.png" alt="AWOL AMERICA Logo" className="h-10 sm:h-12 w-auto object-contain drop-shadow-md" />
+          <div className="hidden md:block">
             <span className="tracking-[0.25em] text-[10px] font-black text-amber-400 block leading-none">AWOL AMERICA</span>
-            <span className="text-[11px] text-white/50 font-sans block mt-0.5 leading-none font-bold">10th Achievement Awards</span>
+            <span className="text-[11px] text-white/50 font-sans block mt-0.5 leading-none font-bold">
+              {generalContent?.awardsTitle ? generalContent.awardsTitle.replace("AWOL AMERICA ", "") : "10th Achievement Awards"}
+            </span>
           </div>
         </button>
 
@@ -235,17 +234,17 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="border-t border-white/5 pt-4 space-y-3">
             <span className="text-[10px] font-bold text-white/40 tracking-wider uppercase block">Contact & Support</span>
             <div className="grid grid-cols-1 gap-2.5 text-xs text-white/70">
-              <a href={`mailto:${CONTACT_INFO.email}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
+              <a href={`mailto:${generalContent?.contactEmail || CONTACT_INFO.email}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
                 <Mail size={14} className="text-amber-400" />
-                <span>{CONTACT_INFO.email}</span>
+                <span>{generalContent?.contactEmail || CONTACT_INFO.email}</span>
               </a>
-              <a href={CONTACT_INFO.websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
+              <a href={generalContent?.contactWebsiteUrl || CONTACT_INFO.websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
                 <Globe size={14} className="text-amber-400" />
-                <span>{CONTACT_INFO.website}</span>
+                <span>{generalContent?.contactWebsite || CONTACT_INFO.website}</span>
               </a>
-              <a href={`tel:${CONTACT_INFO.telephone}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
+              <a href={`tel:${generalContent?.contactPhone || CONTACT_INFO.telephone}`} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
                 <Phone size={14} className="text-amber-400" />
-                <span>{CONTACT_INFO.telephone}</span>
+                <span>{generalContent?.contactPhone || CONTACT_INFO.telephone}</span>
               </a>
             </div>
           </div>
@@ -278,7 +277,16 @@ export const Header: React.FC<HeaderProps> = ({
             className="font-sans text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-white max-w-4xl leading-none"
             id="main-app-title"
           >
-            10th Annual <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200">Achievement Awards</span>
+            {generalContent?.awardsTitle ? (
+              <>
+                {generalContent.awardsTitle.replace(/ AWOL AMERICA /i, '').replace(/Achievement Awards/i, '')} 
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200">Achievement Awards</span>
+              </>
+            ) : (
+              <>
+                10th Annual <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200">Achievement Awards</span>
+              </>
+            )}
           </h1>
           
           {/* Description and Date */}

@@ -6,7 +6,7 @@
 import React, { useState } from "react";
 import { Category, Nominee, UserVote, SystemPhase, TimelineSettings, NomineeGroup, SecuritySettings } from "../types";
 import { CategoryIcon } from "./CategoryIcon";
-import { Check, Vote, AlertTriangle, ShieldCheck, Lock, Award, Heart, Search, Filter, SlidersHorizontal, Share2, Twitter, Facebook, Key } from "lucide-react";
+import { Check, Vote, AlertTriangle, ShieldCheck, Lock, Award, Heart, Search, Filter, SlidersHorizontal, Share2, Twitter, Facebook, Key, CreditCard, Loader2 } from "lucide-react";
 import { formatDateTime, parseLocalDateTime } from "../utils";
 
 interface VotingSectionProps {
@@ -24,6 +24,10 @@ interface VotingSectionProps {
   securitySettings?: SecuritySettings;
   activeAccessCode?: string | null;
   onAccessCodeVerified?: (code: string) => Promise<void>;
+  /** Called when a payment is required. Returns the Monime checkout URL. */
+  onInitiatePayment?: (params: { mode: "one_time" | "per_vote"; nomineeId?: string; categoryId?: number }) => Promise<string>;
+  /** True when the user has already paid for one-time access in this session */
+  hasPaymentAccess?: boolean;
 }
 
 export const VotingSection: React.FC<VotingSectionProps> = ({
@@ -41,6 +45,8 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   securitySettings,
   activeAccessCode,
   onAccessCodeVerified,
+  onInitiatePayment,
+  hasPaymentAccess,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all"); // "all", or a category ID
@@ -52,6 +58,38 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   const [inputCode, setInputCode] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState("");
+
+  // Payment states
+  const [isInitiatingPayment, setIsInitiatingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  // Track which nominee is currently processing payment (for per_vote spinner)
+  const [payingNomineeId, setPayingNomineeId] = useState<string | null>(null);
+
+  const handleInitiateOneTimePayment = async () => {
+    if (!onInitiatePayment) return;
+    setIsInitiatingPayment(true);
+    setPaymentError("");
+    try {
+      const checkoutUrl = await onInitiatePayment({ mode: "one_time" });
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setPaymentError(err.message || "Failed to start payment. Please try again.");
+      setIsInitiatingPayment(false);
+    }
+  };
+
+  const handlePerVotePayment = async (categoryId: number, nomineeId: string) => {
+    if (!onInitiatePayment) return;
+    setPayingNomineeId(nomineeId);
+    setPaymentError("");
+    try {
+      const checkoutUrl = await onInitiatePayment({ mode: "per_vote", nomineeId, categoryId });
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setPaymentError(err.message || "Failed to start payment. Please try again.");
+      setPayingNomineeId(null);
+    }
+  };
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,9 +240,49 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   const isAfterVoting = nowTime > votingEnd;
   const isVotingClosed = isAdminLoggedIn ? false : (isBeforeVoting || isAfterVoting || currentPhase === SystemPhase.RESULTS);
 
+  // Determine if the one-time payment gate should block access
+  const needsOneTimePayment =
+    !isAdminLoggedIn &&
+    securitySettings?.requirePayment &&
+    securitySettings?.paymentMode === "one_time" &&
+    !hasPaymentAccess;
+
   return (
     <div className="space-y-8 animate-fade-in" id="voting-system-container">
-      {(securitySettings?.requireAccessCode && !activeAccessCode && !isAdminLoggedIn) ? (
+      {/* ── ONE-TIME PAYMENT GATE ─────────────────────────────── */}
+      {needsOneTimePayment ? (
+        <div className="w-full bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8 sm:p-12 shadow-2xl text-center space-y-6 max-w-xl mx-auto">
+          <div className="mx-auto w-16 h-16 bg-amber-400/10 rounded-full flex items-center justify-center border border-amber-400/20 mb-4">
+            <CreditCard className="text-amber-400" size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">Payment Required to Vote</h2>
+          <p className="text-white/70 max-w-sm mx-auto leading-relaxed text-sm">
+            Access to the AWOL America Awards Voting Center requires a one-time payment of{" "}
+            <span className="text-amber-400 font-bold">
+              {securitySettings?.paymentCurrency || "SLE"} {securitySettings?.paymentAmount ?? 5}
+            </span>{" "}
+            to unlock all voting categories.
+          </p>
+          {paymentError && (
+            <p className="text-red-400 text-sm font-bold flex items-center justify-center gap-1.5 animate-fade-in">
+              <AlertTriangle size={14} />
+              {paymentError}
+            </p>
+          )}
+          <button
+            onClick={handleInitiateOneTimePayment}
+            disabled={isInitiatingPayment}
+            className="bg-amber-400 hover:bg-amber-300 disabled:opacity-60 disabled:cursor-not-allowed text-black px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-400/20 flex items-center gap-2 mx-auto"
+          >
+            {isInitiatingPayment ? (
+              <><Loader2 size={16} className="animate-spin" /> Processing...</>
+            ) : (
+              <><CreditCard size={16} /> Pay {securitySettings?.paymentCurrency || "SLE"} {securitySettings?.paymentAmount ?? 5} &amp; Unlock Voting</>
+            )}
+          </button>
+          <p className="text-[11px] text-white/30">Secured by Monime · Payments are final and non-refundable</p>
+        </div>
+      ) : (securitySettings?.requireAccessCode && !activeAccessCode && !isAdminLoggedIn) ? (
         <div className="w-full bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8 sm:p-12 shadow-2xl text-center space-y-6 max-w-xl mx-auto">
           <div className="mx-auto w-16 h-16 bg-amber-400/10 rounded-full flex items-center justify-center border border-amber-400/20 mb-4">
             <Key className="text-amber-400" size={32} />
@@ -683,14 +761,29 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    onCastVote(voteConfirmation.categoryId, voteConfirmation.nomineeId);
-                    setJustVotedId(voteConfirmation.nomineeId);
-                    setTimeout(() => setJustVotedId(null), 600);
-                    setVoteConfirmation(null);
+                    if (
+                      !isAdminLoggedIn &&
+                      securitySettings?.requirePayment &&
+                      securitySettings?.paymentMode === "per_vote"
+                    ) {
+                      handlePerVotePayment(voteConfirmation.categoryId, voteConfirmation.nomineeId);
+                    } else {
+                      onCastVote(voteConfirmation.categoryId, voteConfirmation.nomineeId);
+                      setJustVotedId(voteConfirmation.nomineeId);
+                      setTimeout(() => setJustVotedId(null), 600);
+                      setVoteConfirmation(null);
+                    }
                   }}
-                  className="px-4 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-600 text-black font-black text-sm transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer"
+                  disabled={payingNomineeId === voteConfirmation.nomineeId}
+                  className="px-4 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-600 text-black font-black text-sm transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                  Confirm Vote
+                  {payingNomineeId === voteConfirmation.nomineeId ? (
+                    <><Loader2 size={16} className="animate-spin" /> Processing Payment...</>
+                  ) : (
+                    !isAdminLoggedIn && securitySettings?.requirePayment && securitySettings?.paymentMode === "per_vote" ? 
+                      `Pay ${securitySettings?.paymentCurrency || "SLE"} ${securitySettings?.paymentAmount ?? 5} to Vote` : 
+                      "Confirm Vote"
+                  )}
                 </button>
               </div>
             </div>

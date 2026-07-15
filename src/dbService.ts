@@ -17,6 +17,7 @@ import {
   SecuritySettings,
   VotingCode,
   UserVote,
+  GeneralContentSettings,
 } from "./types";
 
 // ─── Helper: convert snake_case DB rows → camelCase app types ────────────────
@@ -197,6 +198,38 @@ export const dbService = {
       )
       .subscribe();
     return makeUnsubscribe(channel);
+  },
+
+  listenToGeneralContent: (callback: (settings: GeneralContentSettings | null) => void, onReady?: () => void): Unsubscribe => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("settings").select("*").eq("key", "generalContent").single();
+        if (data) callback(data.value as GeneralContentSettings);
+        else callback(null);
+      } catch (e) {
+        console.error("Error fetching general content:", e);
+        callback(null);
+      } finally {
+        if (onReady) onReady();
+      }
+    })();
+    const channel = supabase
+      .channel("settings-generalContent")
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: "key=eq.generalContent" },
+        (payload: any) => {
+          const row = payload.new ?? payload.old;
+          if (row?.value) callback(row.value as GeneralContentSettings);
+        }
+      )
+      .subscribe();
+    return makeUnsubscribe(channel);
+  },
+
+  updateGeneralContent: async (settings: GeneralContentSettings) => {
+    const { error } = await supabase
+      .from("settings")
+      .upsert({ key: "generalContent", value: settings }, { onConflict: "key" });
+    if (error) throw error;
   },
 
   updateSecuritySettings: async (settings: SecuritySettings) => {
@@ -616,5 +649,38 @@ export const dbService = {
   deleteMessage: async (id: string) => {
     const { error } = await supabase.from("messages").delete().eq("id", id);
     if (error) throw error;
+  },
+
+  /**
+   * createMonimeCheckout
+   * Calls the Supabase Edge Function `create-monime-checkout` which securely
+   * contacts the Monime API using server-side secrets.
+   *
+   * @param amount - Amount in SLE (e.g. 5 = 5 SLE)
+   * @param currency - Currency code, defaults to "SLE"
+   * @param mode - "one_time" (unlock all votes) or "per_vote" (pay per vote)
+   * @param nomineeId - (per_vote only) the nominee being voted for
+   * @param categoryId - (per_vote only) the category of the vote
+   * @returns checkoutUrl to redirect the user to
+   */
+  createMonimeCheckout: async ({
+    amount,
+    currency = "SLE",
+    mode,
+    nomineeId,
+    categoryId,
+  }: {
+    amount: number;
+    currency?: string;
+    mode: "one_time" | "per_vote";
+    nomineeId?: string;
+    categoryId?: number;
+  }): Promise<{ checkoutUrl: string; sessionId: string }> => {
+    const { data, error } = await supabase.functions.invoke("create-monime-checkout", {
+      body: { amount, currency, mode, nomineeId, categoryId },
+    });
+    if (error) throw new Error(error.message || "Failed to create checkout session.");
+    if (data?.error) throw new Error(data.error);
+    return { checkoutUrl: data.checkoutUrl, sessionId: data.sessionId };
   },
 };

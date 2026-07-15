@@ -1,6 +1,8 @@
 # AWOL America Awards Nomination Platform
 
-A comprehensive, dynamic web application designed to handle the end-to-end lifecycle of the AWOL America Awards. Built with a modern tech stack, this platform enables users to nominate candidates, cast votes securely, and allows administrators to oversee every phase of the event through a powerful backend system.
+> **Developed by [DreamDay Technology](https://dreamdaytech.com) for AWOL America**
+
+A comprehensive, dynamic web application designed to handle the end-to-end lifecycle of the AWOL America Awards — the Association for the Well-Being of Sierra Leoneans (AWOL) America. Built with a modern tech stack, this platform enables users to nominate candidates, cast votes securely, and allows administrators to oversee every phase of the event through a powerful backend system.
 
 ## 🚀 Key Features
 
@@ -62,4 +64,13 @@ npm run dev
 The app will start on your local development server, typically `http://localhost:5173`.
 
 ---
-*Developed for DreamDay Technology.*
+
+## 👨‍💻 About the Developer
+
+This platform was designed and developed by **[DreamDay Technology](https://dreamdaytech.com)**.
+
+DreamDay Technology specializes in building bespoke digital platforms and web applications for organizations and events. This project was commissioned by and built exclusively for **AWOL America** — the Association for the Well-Being of Sierra Leoneans in America.
+
+---
+
+*© 2026 AWOL America. All Rights Reserved. Platform developed by DreamDay Technology.*

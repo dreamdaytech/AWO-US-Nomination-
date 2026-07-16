@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS nominations (
   rationale       TEXT NOT NULL,
   nominator_name  TEXT NOT NULL,
   nominator_email TEXT DEFAULT '',
+  nominator_phone TEXT DEFAULT '',
   submitted_at    TIMESTAMPTZ DEFAULT NOW(),
   approved        BOOLEAN DEFAULT FALSE,
   declined        BOOLEAN DEFAULT FALSE,

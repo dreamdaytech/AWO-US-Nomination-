@@ -6,6 +6,7 @@
 import React, { useState } from "react";
 import { Category, NominationInput, Nomination, SystemPhase, TimelineSettings } from "../types";
 import { CONTACT_INFO } from "../data";
+import { PhoneCodeSelect } from "./PhoneCodeSelect";
 import { Check, AlertCircle, Sparkles, Send, HelpCircle, Share2, Twitter, Facebook, Linkedin, Copy, Lock, Vote, Clock, MessageCircle } from "lucide-react";
 import { formatDateTime, parseLocalDateTime } from "../utils";
 
@@ -43,11 +44,15 @@ export const NominationForm: React.FC<NominationFormProps> = ({
     rationale: "",
     nominatorName: "",
     nominatorEmail: "",
+    nominatorPhone: "",
   });
 
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  
+  const [nomineeContactCode, setNomineeContactCode] = useState("+1");
+  const [nominatorPhoneCode, setNominatorPhoneCode] = useState("+1");
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -110,8 +115,20 @@ export const NominationForm: React.FC<NominationFormProps> = ({
       setError("Please provide your name as the nominator.");
       return;
     }
+    if (!formData.nominatorEmail.trim() && !formData.nominatorPhone?.trim()) {
+      setError("Please provide either your email address or phone number.");
+      return;
+    }
 
-    onSubmitNomination(formData);
+    const finalData = { ...formData };
+    if (finalData.nomineeContact.trim() && !finalData.nomineeContact.trim().startsWith("+")) {
+      finalData.nomineeContact = `${nomineeContactCode} ${finalData.nomineeContact.trim()}`;
+    }
+    if (finalData.nominatorPhone && finalData.nominatorPhone.trim() && !finalData.nominatorPhone.trim().startsWith("+")) {
+      finalData.nominatorPhone = `${nominatorPhoneCode} ${finalData.nominatorPhone.trim()}`;
+    }
+
+    onSubmitNomination(finalData);
     setSubmitted(true);
 
     // Reset form for next submission
@@ -126,7 +143,10 @@ export const NominationForm: React.FC<NominationFormProps> = ({
       rationale: "",
       nominatorName: "",
       nominatorEmail: "",
+      nominatorPhone: "",
     });
+    setNomineeContactCode("+1");
+    setNominatorPhoneCode("+1");
   };
 
   return (
@@ -343,16 +363,23 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                 <label htmlFor="nomineeContact" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
                   Nominee Contact (Phone)
                 </label>
-                <input
-                  type="text"
-                  id="nomineeContact"
-                  name="nomineeContact"
-                  value={formData.nomineeContact}
-                  onChange={handleInputChange}
-                  disabled={isNominationClosed}
-                  placeholder={isNominationClosed ? "Nominations closed" : "e.g. +1 234 567 8900"}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:bg-white/10 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all outline-none text-white placeholder-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
+                <div className="flex bg-white/5 border border-white/10 rounded-xl focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-400 transition-all overflow-visible">
+                  <PhoneCodeSelect
+                    value={nomineeContactCode}
+                    onChange={setNomineeContactCode}
+                    disabled={isNominationClosed}
+                  />
+                  <input
+                    type="text"
+                    id="nomineeContact"
+                    name="nomineeContact"
+                    value={formData.nomineeContact}
+                    onChange={handleInputChange}
+                    disabled={isNominationClosed}
+                    placeholder={isNominationClosed ? "Nominations closed" : "e.g. 234 567 8900"}
+                    className="w-full bg-transparent px-4 py-3 text-sm outline-none text-white placeholder-white/30 disabled:cursor-not-allowed"
+                  />
+                </div>
               </div>
               <div>
                 <label htmlFor="nomineeFacebook" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
@@ -425,11 +452,13 @@ export const NominationForm: React.FC<NominationFormProps> = ({
               </span>
             </div>
 
+
             {/* Nominator Information */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/10">
+            <div className="space-y-4 pt-3 border-t border-white/10">
+              {/* Full Name — full width */}
               <div>
                 <label htmlFor="nominatorName" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
-                  Your Name (Nominator) *
+                  Your Full Name (Nominator) *
                 </label>
                 <input
                   type="text"
@@ -443,20 +472,46 @@ export const NominationForm: React.FC<NominationFormProps> = ({
                   required
                 />
               </div>
-              <div>
-                <label htmlFor="nominatorEmail" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
-                  Your Email Address
-                </label>
-                <input
-                  type="email"
-                  id="nominatorEmail"
-                  name="nominatorEmail"
-                  value={formData.nominatorEmail}
-                  onChange={handleInputChange}
-                  disabled={isNominationClosed}
-                  placeholder={isNominationClosed ? "Nominations closed" : "e.g. alice@example.com"}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:bg-white/10 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all outline-none text-white placeholder-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
+
+              {/* Email + Phone — side by side */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="nominatorEmail" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
+                    Your Email
+                  </label>
+                  <input
+                    type="email"
+                    id="nominatorEmail"
+                    name="nominatorEmail"
+                    value={formData.nominatorEmail}
+                    onChange={handleInputChange}
+                    disabled={isNominationClosed}
+                    placeholder={isNominationClosed ? "Nominations closed" : "e.g. alice@example.com"}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:bg-white/10 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all outline-none text-white placeholder-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="nominatorPhone" className="block text-xs font-bold text-white/75 uppercase tracking-wider mb-2">
+                    Your Phone
+                  </label>
+                  <div className="flex bg-white/5 border border-white/10 rounded-xl focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-400 transition-all overflow-visible">
+                    <PhoneCodeSelect
+                      value={nominatorPhoneCode}
+                      onChange={setNominatorPhoneCode}
+                      disabled={isNominationClosed}
+                    />
+                    <input
+                      type="text"
+                      id="nominatorPhone"
+                      name="nominatorPhone"
+                      value={formData.nominatorPhone}
+                      onChange={handleInputChange}
+                      disabled={isNominationClosed}
+                      placeholder={isNominationClosed ? "Nominations closed" : "e.g. 234 567 8900"}
+                      className="w-full bg-transparent px-4 py-3 text-sm outline-none text-white placeholder-white/30 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

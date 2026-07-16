@@ -45,6 +45,7 @@ function toNomination(row: any): Nomination {
     rationale:        row.rationale,
     nominatorName:    row.nominator_name,
     nominatorEmail:   row.nominator_email ?? "",
+    nominatorPhone:   row.nominator_phone ?? "",
     submittedAt:      row.submitted_at,
     approved:         row.approved,
     declined:         row.declined ?? false,
@@ -527,6 +528,7 @@ export const dbService = {
       rationale:        nom.rationale,
       nominator_name:   nom.nominatorName,
       nominator_email:  nom.nominatorEmail,
+      nominator_phone:  nom.nominatorPhone,
       submitted_at:     nom.submittedAt,
       approved:         nom.approved,
       declined:         nom.declined ?? false,
@@ -541,6 +543,11 @@ export const dbService = {
     if (data.declined   !== undefined) patch.declined  = data.declined;
     if (data.groupId    !== undefined) patch.group_id  = data.groupId;
     const { error } = await supabase.from("nominations").update(patch).eq("id", id);
+    if (error) throw error;
+  },
+
+  linkNominations: async (nominationIds: string[], groupId: string) => {
+    const { error } = await supabase.from("nominations").update({ group_id: groupId }).in("id", nominationIds);
     if (error) throw error;
   },
 

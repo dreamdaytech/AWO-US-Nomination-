@@ -451,6 +451,11 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
     await dbService.deleteNomination(nominationId);
   };
 
+  const handleLinkNominations = async (nominationIds: string[]) => {
+    const groupId = crypto.randomUUID();
+    await dbService.linkNominations(nominationIds, groupId);
+  };
+
   const handleUpdateNomineeVotes = async (nomineeId: string, votes: number) => {
     const nom = nominees.find(n => n.id === nomineeId);
     if (nom) {
@@ -779,6 +784,7 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
               onToggleApproveNomination={handleToggleApproveNomination}
               onDeclineNomination={handleDeclineNomination}
               onDeleteNomination={handleDeleteNomination}
+              onLinkNominations={handleLinkNominations}
               onUpdateNomineeVotes={handleUpdateNomineeVotes}
               onDeleteMessage={handleDeleteMessage}
               onResetAllData={handleResetAllData}

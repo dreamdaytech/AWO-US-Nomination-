@@ -82,6 +82,7 @@ interface AdminDashboardProps {
   onToggleApproveNomination: (id: string) => void;
   onDeclineNomination: (id: string) => void;
   onDeleteNomination: (id: string) => void;
+  onLinkNominations?: (ids: string[]) => void;
   onUpdateNomineeVotes: (id: string, votes: number) => void;
   onDeleteMessage: (id: string) => void;
   onResetAllData: () => void;
@@ -128,6 +129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onToggleApproveNomination,
   onDeclineNomination,
   onDeleteNomination,
+  onLinkNominations,
   onUpdateNomineeVotes,
   onDeleteMessage,
   onResetAllData,
@@ -168,6 +170,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [manageNomineesSortBy, setManageNomineesSortBy] = useState<"category" | "name" | "votes-desc" | "votes-asc">("category");
   const [customDateStr, setCustomDateStr] = useState(simulatedDate.toISOString().split("T")[0]);
   const [selectedNominationId, setSelectedNominationId] = useState<string | null>(null);
+  const [selectedForLinking, setSelectedForLinking] = useState<Set<string>>(new Set());
 
   // Schedule manager form states
   const [formAnnouncementStart, setFormAnnouncementStart] = useState(timelineSettings.announcementStart.slice(0, 16));
@@ -622,9 +625,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return all.filter(n => 
       n.id !== selected.id && 
       n.categoryId === selected.categoryId &&
-      (n.nomineeName.toLowerCase() === selected.nomineeName.toLowerCase() || 
-       n.nomineeName.toLowerCase().includes(selected.nomineeName.toLowerCase()) || 
-       selected.nomineeName.toLowerCase().includes(n.nomineeName.toLowerCase()))
+      (
+        (selected.groupId && n.groupId === selected.groupId) ||
+        (!selected.groupId && !n.groupId && 
+          (n.nomineeName.toLowerCase() === selected.nomineeName.toLowerCase() || 
+           n.nomineeName.toLowerCase().includes(selected.nomineeName.toLowerCase()) || 
+           selected.nomineeName.toLowerCase().includes(n.nomineeName.toLowerCase()))
+        )
+      )
     );
   };
   const similarNominations = getDuplicates(selectedNomination, nominations, nomineeGroups);
@@ -1056,9 +1064,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                   {/* Left Column: Submissions List */}
                   <div className="md:col-span-5 space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                    {selectedForLinking.size >= 2 && (
+                      <div className="mb-4">
+                        <button
+                          onClick={() => {
+                            if (onLinkNominations) {
+                              onLinkNominations(Array.from(selectedForLinking));
+                              setSelectedForLinking(new Set());
+                            }
+                          }}
+                          className="w-full bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30 font-bold py-2 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <Users size={14} />
+                          Link {selectedForLinking.size} Selected Nominations
+                        </button>
+                      </div>
+                    )}
                     {filteredNominations.map((nom) => {
                       const catName = categories.find((c) => c.id === nom.categoryId)?.name || "Unknown";
                       const isSelected = selectedNominationId === nom.id;
+                      
+                      const firstSelectedId = Array.from(selectedForLinking)[0];
+                      const activeLinkCategoryId = firstSelectedId ? nominations.find(n => n.id === firstSelectedId)?.categoryId : null;
+                      const isDisabled = activeLinkCategoryId ? activeLinkCategoryId !== nom.categoryId : false;
+
                       return (
                         <div
                           key={nom.id}
@@ -1067,12 +1096,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             isSelected 
                               ? "bg-amber-400/10 border-amber-400" 
                               : "bg-black/20 border-white/5 hover:border-white/10"
-                          }`}
+                          } ${isDisabled ? "opacity-50" : ""}`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-mono text-white/40 block">
-                              {new Date(nom.submittedAt).toLocaleDateString()}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                disabled={isDisabled}
+                                checked={selectedForLinking.has(nom.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  if (isDisabled) return;
+                                  const newSet = new Set(selectedForLinking);
+                                  if (e.target.checked) newSet.add(nom.id);
+                                  else newSet.delete(nom.id);
+                                  setSelectedForLinking(newSet);
+                                }}
+                                className="w-3.5 h-3.5 text-amber-400 bg-black/40 border border-white/20 rounded focus:ring-amber-400 cursor-pointer disabled:cursor-not-allowed"
+                              />
+                              <span className="text-[10px] font-mono text-white/40 block">
+                                {new Date(nom.submittedAt).toLocaleDateString()}
+                              </span>
+                            </div>
                             <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
                               nom.approved 
                                 ? "bg-emerald-400/15 text-emerald-400 border border-emerald-400/20" 
@@ -1144,6 +1189,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                           </div>
                         </div>
+
+                        {similarNominations.length > 0 && (
+                          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3">
+                            <AlertCircle className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                            <div>
+                              <strong className="text-amber-400 text-sm block">
+                                {similarNominations.length} similar nomination(s) found!
+                              </strong>
+                              <p className="text-xs text-amber-400/80 mt-1">
+                                These nominations appear to be for the same person or are linked as a group.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Rationale and text blocks */}
                         <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/5 text-xs">

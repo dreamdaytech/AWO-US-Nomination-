@@ -41,6 +41,7 @@ export interface NominationInput {
   rationale: string;
   nominatorName: string;
   nominatorEmail: string;
+  nominatorPhone?: string;
 }
 
 export interface Nomination extends NominationInput {

@@ -46,8 +46,7 @@ import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, 
 import { AdminGroupsTab } from "./AdminGroupsTab";
 import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown, Download } from "lucide-react";
 
-import { formatDateTime } from "../utils";
-import { parseLocalDateTime } from "../utils";
+import { formatDateTime, parseLocalDateTime, exportNominationsPDF, exportVotesPDF } from "../utils";
 
 // Custom high-contrast tooltip for Recharts matching Admin console theme
 const CustomTooltip = ({ active, payload }: any) => {
@@ -980,9 +979,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
                 
-                <span className="bg-white/5 text-white/70 px-3 py-1.5 rounded-lg border border-white/10 text-xs font-mono">
-                  Total Submissions: {totalCustomNominations}
-                </span>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="bg-white/5 text-white/70 px-3 py-1.5 rounded-lg border border-white/10 text-xs font-mono">
+                    Total Submissions: {totalCustomNominations}
+                  </span>
+                  <button
+                    id="export-nominations-pdf-btn"
+                    onClick={() => {
+                      setIsExportingPDF(true);
+                      try {
+                        exportNominationsPDF(nominations, categories, loggedInAdmin.name);
+                      } finally {
+                        setTimeout(() => setIsExportingPDF(false), 1200);
+                      }
+                    }}
+                    disabled={isExportingPDF || nominations.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-amber-400 hover:text-amber-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Export Nominations Report as PDF"
+                  >
+                    <Download size={13} />
+                    {isExportingPDF ? "Preparing..." : "Export PDF"}
+                  </button>
+                </div>
               </div>
 
               {nominations.length > 0 && (
@@ -1848,14 +1866,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* TAB 3: BALLOT & STANDINGS DESK */}
           {activeSubTab === "ballots" && (
             <div className="space-y-6" id="admin-subtab-ballots">
-              <div>
-                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                  <BarChart3 size={18} className="text-amber-400" />
-                  <span>Ballot Ledger & Live Analytics</span>
-                </h3>
-                <p className="text-xs text-white/60 mt-1 leading-relaxed">
-                  Monitor the relative voter distribution and inject or clear manual votes to simulate real election trends across each of the 10th Annual award categories.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                    <BarChart3 size={18} className="text-amber-400" />
+                    <span>Ballot Ledger & Live Analytics</span>
+                  </h3>
+                  <p className="text-xs text-white/60 mt-1 leading-relaxed">
+                    Monitor the relative voter distribution and inject or clear manual votes to simulate real election trends across each of the 10th Annual award categories.
+                  </p>
+                </div>
+                <button
+                  id="export-votes-pdf-btn"
+                  onClick={() => {
+                    setIsExportingPDF(true);
+                    try {
+                      exportVotesPDF(nominees, categories, loggedInAdmin.name);
+                    } finally {
+                      setTimeout(() => setIsExportingPDF(false), 1200);
+                    }
+                  }}
+                  disabled={isExportingPDF || nominees.length === 0}
+                  className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-amber-400 hover:text-amber-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export Vote Standings Report as PDF"
+                >
+                  <Download size={13} />
+                  {isExportingPDF ? "Preparing..." : "Export PDF"}
+                </button>
               </div>
 
               {/* Category Votes Visual Distribution Chart */}

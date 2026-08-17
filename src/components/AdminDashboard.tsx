@@ -46,7 +46,7 @@ import { Category, Nominee, Nomination, Message, SystemPhase, TimelineSettings, 
 import { AdminGroupsTab } from "./AdminGroupsTab";
 import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown, Download } from "lucide-react";
 
-import { formatDateTime, parseLocalDateTime, exportNominationsPDF, exportVotesPDF } from "../utils";
+import { formatDateTime, parseLocalDateTime, exportNominationsPDF, exportVotesPDF, exportFinalListPDF } from "../utils";
 
 // Custom high-contrast tooltip for Recharts matching Admin console theme
 const CustomTooltip = ({ active, payload }: any) => {
@@ -269,6 +269,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isGeneratingCodes, setIsGeneratingCodes] = useState(false);
   const [isExportingCodes, setIsExportingCodes] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [isExportingFinalListPDF, setIsExportingFinalListPDF] = useState(false);
   const [isRefreshingStats, setIsRefreshingStats] = useState(false);
 
   React.useEffect(() => {
@@ -1457,19 +1458,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </h3>
                     <p className="text-xs text-white/60 mt-1">Manage the list of nominees available for voting.</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setEditingNomineeId(null);
-                      setNewNomineeName("");
-                      setNewNomineePicture("");
-                      setNewNomineeDesc("");
-                      setNewNomineeListType("final");
-                      setIsNomineeModalOpen(true);
-                    }}
-                    className="bg-amber-400 hover:bg-amber-500 text-black px-4 py-2 rounded-xl font-bold text-xs transition-colors flex items-center gap-2"
-                  >
-                    <Plus size={14} /> Create Nominee
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setIsExportingFinalListPDF(true);
+                        try {
+                          const exportData = nominees.filter(n => n.listType === "final" || n.listType === "approved" || n.id.startsWith("custom-nom-") || !n.listType);
+                          exportFinalListPDF(exportData, categories, loggedInAdmin.name);
+                        } finally {
+                          setTimeout(() => setIsExportingFinalListPDF(false), 1200);
+                        }
+                      }}
+                      disabled={isExportingFinalListPDF || nominees.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-amber-400 hover:text-amber-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Export Final List & Approved Nominations Report as PDF"
+                    >
+                      <Download size={13} />
+                      {isExportingFinalListPDF ? "Preparing..." : "Export Final List"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingNomineeId(null);
+                        setNewNomineeName("");
+                        setNewNomineePicture("");
+                        setNewNomineeDesc("");
+                        setNewNomineeListType("final");
+                        setIsNomineeModalOpen(true);
+                      }}
+                      className="bg-amber-400 hover:bg-amber-500 text-black px-4 py-2 rounded-xl font-bold text-xs transition-colors flex items-center gap-2"
+                    >
+                      <Plus size={14} /> Create Nominee
+                    </button>
+                  </div>
                 </div>
               )}
 

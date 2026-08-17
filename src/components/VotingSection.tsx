@@ -412,11 +412,13 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
               >
                 <option value="all" className="bg-[#18181b] text-white">All Categories</option>
                 <option disabled className="bg-[#18181b] text-white/30">── Select Category ──</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id.toString()} className="bg-[#18181b] text-white">
-                    Cat {cat.id}: {cat.name}
-                  </option>
-                ))}
+                {categories
+                  .filter((cat) => allNominees.some((n) => n.categoryId === cat.id))
+                  .map((cat) => (
+                    <option key={cat.id} value={cat.id.toString()} className="bg-[#18181b] text-white">
+                      Cat {cat.id}: {cat.name}
+                    </option>
+                  ))}
               </select>
             </div>
 

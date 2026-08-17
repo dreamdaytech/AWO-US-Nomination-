@@ -2883,6 +2883,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${securitySettings?.enableCaptcha ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
                       </div>
+
+                      {/* ── ALLOW MULTIPLE VOTES ────────────────────────── */}
+                      <div className="flex justify-between items-start pt-4 border-t border-white/5 gap-4">
+                        <div>
+                          <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                            <RefreshCw size={13} className="text-amber-400" />
+                            Allow Multiple Votes
+                          </h4>
+                          <p className="text-xs text-white/60 leading-relaxed">
+                            When <span className="text-amber-400 font-semibold">ON</span>, visitors can vote more than once per category. Vote counts accumulate with every submission. Use with care.
+                          </p>
+                          {securitySettings?.allowMultipleVotes && (
+                            <p className="text-[11px] text-orange-400/80 mt-1.5 flex items-center gap-1">
+                              <AlertCircle size={11} />
+                              Repeat voting is currently active — all categories are unlocked.
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() =>
+                            onUpdateSecuritySettings({
+                              ...securitySettings,
+                              allowMultipleVotes: !securitySettings?.allowMultipleVotes,
+                            })
+                          }
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${securitySettings?.allowMultipleVotes ? 'bg-amber-400' : 'bg-white/20'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${securitySettings?.allowMultipleVotes ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* ── MONIME PAYMENT GATE ─────────────────────────────── */}

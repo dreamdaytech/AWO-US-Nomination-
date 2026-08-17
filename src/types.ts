@@ -94,6 +94,7 @@ export interface SecuritySettings {
   paymentMode?: "one_time" | "per_vote"; // one_time = pay once to unlock all votes; per_vote = pay for each individual vote
   paymentAmount?: number; // Amount in the smallest currency unit (e.g., cents for SLE leones)
   paymentCurrency?: string; // e.g., "SLE"
+  allowMultipleVotes?: boolean; // When true, visitors can vote more than once per category
 }
 
 export interface PaymentSession {

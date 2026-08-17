@@ -308,6 +308,28 @@ export const dbService = {
     }
   },
 
+  /**
+   * Cast a vote without unique-constraint enforcement — used when
+   * "Allow Multiple Votes" is ON. Inserts a fresh row every call so the
+   * same code can vote multiple times in the same category.
+   */
+  castVoteWithCodeMulti: async (code: string, categoryId: number, nomineeId: string) => {
+    // Validate the code exists first
+    const { data: codeData, error: codeErr } = await supabase
+      .from("voting_codes")
+      .select("code")
+      .eq("code", code)
+      .single();
+    if (codeErr || !codeData) throw new Error("Invalid access code.");
+
+    const { error } = await supabase.from("votes").insert({
+      code,
+      category_id: categoryId,
+      nominee_id: nomineeId,
+    });
+    if (error) throw error;
+  },
+
   listenToDate: (callback: (date: string) => void, onReady?: () => void): Unsubscribe => {
     // Initial fetch
     (async () => {

@@ -159,11 +159,15 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
   };
 
 
+  const allowMultipleVotes = !!securitySettings?.allowMultipleVotes;
+
   const getVoteForCategory = (catId: number) => {
     return userVotes.find((uv) => uv.categoryId === catId);
   };
 
   const isVotedInCategory = (catId: number) => {
+    // In multi-vote mode, never treat a category as "locked"
+    if (allowMultipleVotes) return false;
     return !!getVoteForCategory(catId);
   };
 
@@ -360,6 +364,17 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
             </div>
           )}
 
+          {/* Multiple Votes Active Banner */}
+          {allowMultipleVotes && !isVotingClosed && (
+            <div className="bg-orange-500/10 border border-orange-400/30 rounded-xl p-3 flex items-center justify-center gap-2.5 text-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.08)] animate-fade-in">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              <p className="text-[11px] font-bold tracking-wide">
+                <span className="uppercase font-mono mr-1.5">Multiple Votes Enabled —</span>
+                You may vote more than once per category.
+              </p>
+            </div>
+          )}
+
       {/* Search & Filter Header Container */}
       <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 sm:p-6 shadow-2xl z-10 relative">
         <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
@@ -459,10 +474,16 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                           {category.name}
                         </h3>
                       </div>
-                      {catVote && (
+                      {catVote && !allowMultipleVotes && (
                         <span className="text-[10px] font-sans font-bold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20 shadow-[0_0_10px_rgba(52,211,153,0.1)] flex items-center gap-1.5 whitespace-nowrap">
                           <Check size={12} strokeWidth={3} />
                           Voted
+                        </span>
+                      )}
+                      {catVote && allowMultipleVotes && (
+                        <span className="text-[10px] font-sans font-bold text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20 flex items-center gap-1.5 whitespace-nowrap">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                          Voted · Vote Again
                         </span>
                       )}
                     </div>
@@ -568,12 +589,20 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                                   ? isSelected
                                     ? "bg-amber-400/10 border-amber-400/30 text-amber-300"
                                     : "bg-white/5 text-white/30 border-white/5 cursor-not-allowed"
+                                  : allowMultipleVotes
+                                  ? isSelected
+                                    ? "bg-gradient-to-tr from-orange-500 to-amber-500 text-black border-none font-bold cursor-pointer animate-pulse"
+                                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20 cursor-pointer"
                                   : isSelected
                                   ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black border-none font-bold cursor-pointer"
                                   : "bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20 cursor-pointer"
                               }`}
                             >
-                              {isVotingClosed ? (isSelected ? "My Vote" : "Closed") : (isSelected ? "Cast Active" : "Vote Nominee")}
+                              {isVotingClosed
+                                ? (isSelected ? "My Vote" : "Closed")
+                                : allowMultipleVotes
+                                ? (isSelected ? "Vote Again ↺" : "Vote Nominee")
+                                : (isSelected ? "Cast Active" : "Vote Nominee")}
                             </button>
                           </div>
                         </div>

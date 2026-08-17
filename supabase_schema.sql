@@ -153,3 +153,81 @@ CREATE POLICY "Allow all" ON messages             FOR ALL USING (true) WITH CHEC
 CREATE POLICY "Allow all" ON nominee_groups       FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON grouping_audit_logs  FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON admins               FOR ALL USING (true) WITH CHECK (true);
+
+
+-- ============================================================
+-- 8. VOTING CODES (Code-as-an-Account system)
+-- Created directly in Supabase — documented here for reference
+-- ============================================================
+CREATE TABLE IF NOT EXISTS voting_codes (
+  id         BIGSERIAL PRIMARY KEY,
+  code       TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE voting_codes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all" ON voting_codes FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE voting_codes;
+
+
+-- ============================================================
+-- 9. VOTES
+-- Each row = one vote cast. Linked to a voting_code via `code`.
+-- NOTE: The original unique constraint on (code, category_id)
+-- has been intentionally DROPPED to support the Admin toggle
+-- "Allow Multiple Votes". A non-unique index is kept for perf.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS votes (
+  id          BIGSERIAL PRIMARY KEY,
+  code        TEXT NOT NULL REFERENCES voting_codes(code) ON DELETE CASCADE,
+  category_id INTEGER NOT NULL,
+  nominee_id  TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Performance index (non-unique — allows multiple votes per code+category when admin enables it)
+CREATE INDEX IF NOT EXISTS idx_votes_code_category ON votes (code, category_id);
+
+ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all" ON votes FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE votes;
+
+
+-- ============================================================
+-- cast_vote RPC — used when "Allow Multiple Votes" is OFF.
+-- Enforces one vote per code per category via unique upsert.
+-- When "Allow Multiple Votes" is ON, the app inserts directly
+-- into `votes` (bypassing this RPC) via castVoteWithCodeMulti.
+-- ============================================================
+CREATE OR REPLACE FUNCTION cast_vote(p_code TEXT, p_category_id INTEGER, p_nominee_id TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Validate code
+  IF NOT EXISTS (SELECT 1 FROM voting_codes WHERE code = p_code) THEN
+    RAISE EXCEPTION 'Invalid access code';
+  END IF;
+
+  -- Enforce one vote per category per code (single-vote mode)
+  IF EXISTS (SELECT 1 FROM votes WHERE code = p_code AND category_id = p_category_id) THEN
+    RAISE EXCEPTION 'You have already voted in this category.';
+  END IF;
+
+  INSERT INTO votes (code, category_id, nominee_id)
+  VALUES (p_code, p_category_id, p_nominee_id);
+
+  -- Increment nominee vote count atomically
+  UPDATE nominees SET votes = votes + 1 WHERE id = p_nominee_id;
+END;
+$$;
+
+
+-- ============================================================
+-- MIGRATION: Allow Multiple Votes (applied 2026-08-17)
+-- ============================================================
+-- Drop the unique constraint that blocked repeat votes per code+category.
+-- The cast_vote RPC handles enforcement in single-vote mode via app logic.
+-- ALTER TABLE votes DROP CONSTRAINT IF EXISTS votes_code_category_id_key;
+-- (Already applied — kept here as a record)
+

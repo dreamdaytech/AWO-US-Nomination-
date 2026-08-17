@@ -351,12 +351,19 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
       const nom = nominees.find(n => n.id === nomineeId);
       if (!nom) return;
 
+      const multiVote = !!securitySettings.allowMultipleVotes;
+
       if (securitySettings.requireAccessCode) {
         if (!activeAccessCode) {
           alert("Session expired or missing access code.");
           return;
         }
-        await dbService.castVoteWithCode(activeAccessCode, categoryId, nom.id);
+        if (multiVote) {
+          // Multi-vote mode: bypass the unique-constraint RPC
+          await dbService.castVoteWithCodeMulti(activeAccessCode, categoryId, nom.id);
+        } else {
+          await dbService.castVoteWithCode(activeAccessCode, categoryId, nom.id);
+        }
       } else {
         if (securitySettings.enableCaptcha) {
           // Trigger CAPTCHA instead of direct vote
@@ -369,11 +376,25 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
         }
       }
 
-      // Record vote in user's browser ballot
-      setUserVotes((prev) => {
-        const filtered = prev.filter((v) => v.categoryId !== categoryId);
-        return [...filtered, { categoryId, nomineeId }];
-      });
+      if (multiVote) {
+        // In multi-vote mode: do NOT lock the category — visitor can vote again.
+        // We still briefly record the vote so the UI can show a "✓ Voted!" flash,
+        // but we remove it immediately so the button reactivates.
+        setUserVotes((prev) => {
+          const filtered = prev.filter((v) => v.categoryId !== categoryId);
+          return [...filtered, { categoryId, nomineeId }];
+        });
+        // Remove after a short delay so the confirmation flash is visible
+        setTimeout(() => {
+          setUserVotes((prev) => prev.filter((v) => v.categoryId !== categoryId));
+        }, 2500);
+      } else {
+        // Single-vote mode: lock the category in the browser ballot as before
+        setUserVotes((prev) => {
+          const filtered = prev.filter((v) => v.categoryId !== categoryId);
+          return [...filtered, { categoryId, nomineeId }];
+        });
+      }
     } catch (e: any) {
       alert(e.message || "Failed to cast vote.");
     }

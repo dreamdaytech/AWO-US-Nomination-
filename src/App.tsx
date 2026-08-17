@@ -424,19 +424,11 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
   };
 
   const handleAddNominee = async (nominee: Nominee) => {
-    try {
-      await dbService.setNominee(nominee);
-    } catch (e) {
-      console.error("Error adding nominee:", e);
-    }
+    await dbService.setNominee(nominee);
   };
 
   const handleUpdateNominee = async (nomineeId: string, data: Partial<Nominee>) => {
-    try {
-      await dbService.updateNominee(nomineeId, data);
-    } catch (e) {
-      console.error("Error updating nominee:", e);
-    }
+    await dbService.updateNominee(nomineeId, data);
   };
 
   const handleDeleteNominee = async (nomineeId: string) => {
@@ -496,8 +488,8 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
   const handleCreateCategory = async (cat: Category) => {
     // Determine the max orderIndex and set this to max + 1
     const maxOrder = categories.reduce((max, c) => Math.max(max, c.orderIndex ?? 0), 0);
-    const newCat = { ...cat, orderIndex: maxOrder + 1 };
-    await dbService.setCategory(newCat);
+    const newCat = { ...cat, id: 0, orderIndex: maxOrder + 1 };
+    await dbService.createCategory(newCat);
     // Manually refresh to ensure UI updates instantly even if real-time replication is disabled
     supabase.from("categories").select("*").then(({ data }) => {
       if (data) {
@@ -507,7 +499,7 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
     });
   };
   const handleUpdateCategory = async (cat: Category) => {
-    await dbService.setCategory(cat);
+    await dbService.updateCategory(cat);
     supabase.from("categories").select("*").then(({ data }) => {
       if (data) {
         const cats = data.map(toCategory).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));

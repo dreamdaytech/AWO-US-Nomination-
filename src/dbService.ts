@@ -450,31 +450,68 @@ export const dbService = {
   // ── MUTATIONS ────────────────────────────────────────────────────────────
 
   // Categories
-  setCategory: async (category: Category) => {
-    // Upsert behavior
-    if (category.id) {
-      // Check if it exists. We might be creating a new one if id is 0 or unassigned.
-      // But typically we let postgres auto-generate the ID for new rows.
-      // If we pass an ID that doesn't exist, upsert works but might violate serial sequence.
-      // It's safer to separate insert and update if id is 0.
-      if (category.id === 0) {
-        const { data, error } = await supabase.from("categories").insert({
-          name: category.name,
-          description: category.description,
-          icon_name: category.iconName,
-          order_index: category.orderIndex ?? 0,
-        });
-        if (error) throw error;
-        return data;
-      }
-    }
-    const { data, error } = await supabase.from("categories").upsert({
-      id: category.id,
+  /**
+   * Insert a brand-new category (id must be 0 / falsy — Postgres auto-generates the id).
+   */
+  createCategory: async (category: Category) => {
+    const { data, error } = await supabase.from("categories").insert({
       name: category.name,
       description: category.description,
       icon_name: category.iconName,
       order_index: category.orderIndex ?? 0,
-    });
+    }).select();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Update an existing category (id must be a real, positive DB id).
+   */
+  updateCategory: async (category: Category) => {
+    if (!category.id || category.id === 0) {
+      throw new Error("Cannot update a category without a valid id. Use createCategory instead.");
+    }
+    const { data, error } = await supabase
+      .from("categories")
+      .update({
+        name: category.name,
+        description: category.description,
+        icon_name: category.iconName,
+        order_index: category.orderIndex ?? 0,
+      })
+      .eq("id", category.id)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * @deprecated Use createCategory / updateCategory directly.
+   * Kept for backward-compatibility with rearrangeCategories.
+   */
+  setCategory: async (category: Category) => {
+    if (!category.id || category.id === 0) {
+      // New category — let Postgres generate the id
+      const { data, error } = await supabase.from("categories").insert({
+        name: category.name,
+        description: category.description,
+        icon_name: category.iconName,
+        order_index: category.orderIndex ?? 0,
+      }).select();
+      if (error) throw error;
+      return data;
+    }
+    // Existing category — update by id
+    const { data, error } = await supabase
+      .from("categories")
+      .update({
+        name: category.name,
+        description: category.description,
+        icon_name: category.iconName,
+        order_index: category.orderIndex ?? 0,
+      })
+      .eq("id", category.id)
+      .select();
     if (error) throw error;
     return data;
   },
@@ -588,6 +625,26 @@ export const dbService = {
   deleteNominee: async (id: string) => {
     const { error } = await supabase.from("nominees").delete().eq("id", id);
     if (error) throw error;
+  },
+
+  /**
+   * Upload a nominee image to Supabase Storage and return the public URL.
+   * The file is stored under 'nominee-images/<nomineeId>.<ext>'.
+   * Make sure the 'nominee-images' bucket exists in your Supabase project
+   * (Storage → New Bucket → name: "nominee-images", public: true).
+   */
+  uploadNomineeImage: async (nomineeId: string, file: File): Promise<string> => {
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const path = `${nomineeId}.${ext}`;
+    // Remove old file first (ignore error if it doesn't exist)
+    await supabase.storage.from("nominee-images").remove([path]);
+    const { error: uploadError } = await supabase.storage
+      .from("nominee-images")
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from("nominee-images").getPublicUrl(path);
+    // Cache-bust so the browser picks up a freshly uploaded image
+    return `${data.publicUrl}?t=${Date.now()}`;
   },
 
   updateNomineeVotes: async (id: string, votes: number) => {

@@ -224,9 +224,9 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({
                       <Trophy size={18} className="stroke-[2.5]" />
                     </div>
                     {activeLeader.avatarUrl ? (
-                      <img src={activeLeader.avatarUrl} alt={activeLeader.name} className="w-10 h-10 rounded-full object-cover border border-amber-400/30 bg-black/40" />
+                      <img src={activeLeader.avatarUrl} alt={activeLeader.name} className="w-16 h-16 rounded-full object-cover border-2 border-amber-400/50 bg-black/40 shadow-lg" />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-amber-400/20 flex items-center justify-center text-amber-400 text-lg font-bold border border-amber-400/30">
+                      <div className="w-16 h-16 rounded-full bg-amber-400/20 flex items-center justify-center text-amber-400 text-2xl font-bold border-2 border-amber-400/50">
                         {activeLeader.name.charAt(0)}
                       </div>
                     )}
@@ -257,9 +257,9 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({
                         <div className="flex justify-between items-end text-xs">
                           <div className="flex items-center gap-2">
                             {nom.avatarUrl ? (
-                              <img src={nom.avatarUrl} alt={nom.name} className="w-6 h-6 rounded-full object-cover border border-white/10 bg-black/40" />
+                              <img src={nom.avatarUrl} alt={nom.name} className="w-10 h-10 rounded-full object-cover border border-white/20 bg-black/40 shrink-0" />
                             ) : (
-                              <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-[10px] font-bold border border-white/10">
+                              <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-xs font-bold border border-white/20 shrink-0">
                                 {nom.name.charAt(0)}
                               </div>
                             )}

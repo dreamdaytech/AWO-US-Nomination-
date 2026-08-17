@@ -510,9 +510,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
                           <div className="flex flex-col items-center gap-3 w-full">
                             <div className="relative shrink-0 mb-2">
                               {nom.avatarUrl ? (
-                                <img src={nom.avatarUrl} alt={nom.name} className="w-24 h-24 rounded-full object-cover border-4 border-white/10 bg-black/40 group-hover/card:border-amber-400/50 transition-all duration-300" />
+                                <img src={nom.avatarUrl} alt={nom.name} className="w-32 h-32 rounded-full object-cover border-4 border-white/10 bg-black/40 group-hover/card:border-amber-400/50 transition-all duration-300" />
                               ) : (
-                                <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-3xl font-bold border-4 border-white/10 group-hover/card:border-amber-400/50 transition-all duration-300">
+                                <div className="w-32 h-32 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-4xl font-bold border-4 border-white/10 group-hover/card:border-amber-400/50 transition-all duration-300">
                                   {nom.name.charAt(0)}
                                 </div>
                               )}
@@ -601,9 +601,9 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
             <div className="pr-6">
               <div className="flex items-center gap-4 mb-4">
                 {selectedNominee.avatarUrl ? (
-                  <img src={selectedNominee.avatarUrl} alt={selectedNominee.name} className="w-20 h-20 rounded-full object-cover border border-white/10 bg-black/40" />
+                  <img src={selectedNominee.avatarUrl} alt={selectedNominee.name} className="w-28 h-28 rounded-full object-cover border-2 border-white/20 bg-black/40 shadow-lg" />
                 ) : (
-                  <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-2xl font-bold border border-white/10">
+                  <div className="w-28 h-28 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-3xl font-bold border-2 border-white/20">
                     {selectedNominee.name.charAt(0)}
                   </div>
                 )}

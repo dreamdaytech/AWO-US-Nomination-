@@ -47,6 +47,7 @@ import { AdminGroupsTab } from "./AdminGroupsTab";
 import { Users, Search, Filter, ArrowUpDown, ChevronDown, X, ArrowUp, ArrowDown, Download } from "lucide-react";
 
 import { formatDateTime, parseLocalDateTime, exportNominationsPDF, exportVotesPDF, exportFinalListPDF } from "../utils";
+import { dbService } from "../dbService";
 
 // Custom high-contrast tooltip for Recharts matching Admin console theme
 const CustomTooltip = ({ active, payload }: any) => {
@@ -217,7 +218,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [newNomineeName, setNewNomineeName] = useState("");
   const [newNomineeCategory, setNewNomineeCategory] = useState(categories[0]?.id || 1);
-  const [newNomineePicture, setNewNomineePicture] = useState("");
+  const [newNomineePicture, setNewNomineePicture] = useState(""); // base64 preview URL
+  const [newNomineeFile, setNewNomineeFile] = useState<File | null>(null); // raw File for upload
   const [newNomineeDesc, setNewNomineeDesc] = useState("");
   const [newNomineeAchievements, setNewNomineeAchievements] = useState<string[]>([]);
   const [newNomineeListType, setNewNomineeListType] = useState<"final" | "approved">("final");
@@ -524,40 +526,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewNomineeAchievements(generated);
   };
 
-  const handleCreateNominee = (e: React.FormEvent) => {
+  const handleCreateNominee = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanedAchievements = newNomineeAchievements.filter(a => a.trim().length > 0);
 
-    if (editingNomineeId) {
-      onUpdateNominee(editingNomineeId, {
-        categoryId: newNomineeCategory,
-        name: newNomineeName,
-        description: newNomineeDesc || "Added by Admin",
-        avatarUrl: newNomineePicture,
-        listType: newNomineeListType,
-        achievements: cleanedAchievements,
+    try {
+      // Determine nominee ID upfront so we can name the image file
+      const nomineeId = editingNomineeId ?? crypto.randomUUID();
+
+      // Upload image to Supabase Storage if a new file was selected
+      let avatarUrl = newNomineePicture; // keep existing URL if no new file
+      if (newNomineeFile) {
+        avatarUrl = await dbService.uploadNomineeImage(nomineeId, newNomineeFile);
+      }
+
+      if (editingNomineeId) {
+        await onUpdateNominee(editingNomineeId, {
+          categoryId: newNomineeCategory,
+          name: newNomineeName,
+          description: newNomineeDesc || "Added by Admin",
+          avatarUrl,
+          listType: newNomineeListType,
+          achievements: cleanedAchievements,
+        });
+        setNewNomineeSuccess("Nominee updated successfully!");
+      } else {
+        await onAddNominee({
+          id: nomineeId,
+          categoryId: newNomineeCategory,
+          name: newNomineeName,
+          description: newNomineeDesc || "Added by Admin",
+          avatarUrl,
+          listType: newNomineeListType,
+          votes: 0,
+          achievements: cleanedAchievements,
+        });
+        setNewNomineeSuccess("Nominee created successfully!");
+      }
+
+      // Reset form
+      setNewNomineeName("");
+      setNewNomineePicture("");
+      setNewNomineeFile(null);
+      setNewNomineeDesc("");
+      setNewNomineeAchievements([]);
+      setEditingNomineeId(null);
+      setNewNomineeListType("final");
+      setTimeout(() => setNewNomineeSuccess(""), 3000);
+    } catch (err: any) {
+      console.error("Error saving nominee:", err);
+      setConfirmModal({
+        isOpen: true,
+        title: "Save Error",
+        message: `Failed to save nominee:\n\n${err?.message ?? err}`,
+        isDanger: true,
+        isAlertOnly: true,
+        confirmText: "OK",
+        onConfirm: () => {}
       });
-      setNewNomineeSuccess("Nominee updated successfully!");
-    } else {
-      onAddNominee({
-        id: crypto.randomUUID(),
-        categoryId: newNomineeCategory,
-        name: newNomineeName,
-        description: newNomineeDesc || "Added by Admin",
-        avatarUrl: newNomineePicture,
-        listType: newNomineeListType,
-        votes: 0,
-        achievements: cleanedAchievements,
-      });
-      setNewNomineeSuccess("Nominee created successfully!");
     }
-    setNewNomineeName("");
-    setNewNomineePicture("");
-    setNewNomineeDesc("");
-    setNewNomineeAchievements([]);
-    setEditingNomineeId(null);
-    setNewNomineeListType("final");
-    setTimeout(() => setNewNomineeSuccess(""), 3000);
   };
 
 
@@ -1481,6 +1508,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         setEditingNomineeId(null);
                         setNewNomineeName("");
                         setNewNomineePicture("");
+                        setNewNomineeFile(null);
                         setNewNomineeDesc("");
                         setNewNomineeListType("final");
                         setIsNomineeModalOpen(true);
@@ -1727,9 +1755,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div key={n.id} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-white/20">
                                 <div className="flex items-center gap-4">
                                   {n.avatarUrl ? (
-                                    <img src={n.avatarUrl} alt={n.name} className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40" />
+                                    <img src={n.avatarUrl} alt={n.name} className="w-16 h-16 rounded-full object-cover border-2 border-white/20 bg-black/40" />
                                   ) : (
-                                    <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-lg font-bold border border-white/10">
+                                    <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-xl font-bold border-2 border-white/20">
                                       {n.name.charAt(0)}
                                     </div>
                                   )}
@@ -1776,9 +1804,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div key={n.id} className="bg-white/5 border border-white/10 p-5 rounded-xl flex flex-col gap-4 transition-all hover:border-white/20 relative group">
                                 <div className="flex flex-col items-center gap-4 text-center">
                                   {n.avatarUrl ? (
-                                    <img src={n.avatarUrl} alt={n.name} className="w-24 h-24 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
+                                    <img src={n.avatarUrl} alt={n.name} className="w-32 h-32 rounded-full object-cover border-2 border-white/20 bg-black/40 shrink-0 shadow-lg" />
                                   ) : (
-                                    <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-3xl font-bold border border-white/10 shrink-0">
+                                    <div className="w-32 h-32 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-4xl font-bold border-2 border-white/20 shrink-0">
                                       {n.name.charAt(0)}
                                     </div>
                                   )}
@@ -3710,7 +3738,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </label>
                     <div className="flex gap-4 items-center">
                       {newNomineePicture && (
-                        <img src={newNomineePicture} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-white/10 bg-black/40 shrink-0" />
+                        <img src={newNomineePicture} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-amber-400/40 bg-black/40 shrink-0 shadow-lg" />
                       )}
                       <input
                         type="file"
@@ -3718,6 +3746,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
+                            // Store the raw File for Supabase Storage upload
+                            setNewNomineeFile(file);
+                            // Generate a local preview using FileReader
                             const reader = new FileReader();
                             reader.onloadend = () => {
                               const img = new Image();
@@ -3727,7 +3758,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 const MAX_HEIGHT = 400;
                                 let width = img.width;
                                 let height = img.height;
-                                
                                 if (width > height) {
                                   if (width > MAX_WIDTH) {
                                     height = Math.round((height * MAX_WIDTH) / width);
@@ -3739,11 +3769,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     height = MAX_HEIGHT;
                                   }
                                 }
-                                
                                 canvas.width = width;
                                 canvas.height = height;
                                 const ctx = canvas.getContext("2d");
                                 ctx?.drawImage(img, 0, 0, width, height);
+                                // Preview only — actual upload happens on Save
                                 setNewNomineePicture(canvas.toDataURL("image/webp", 0.8));
                               };
                               img.src = reader.result as string;

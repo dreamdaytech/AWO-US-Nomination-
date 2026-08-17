@@ -181,6 +181,32 @@ const PDF_BASE_STYLES = `
   .rank { font-weight: 900; color: #d97706; font-size: 12px; min-width: 24px; }
   .progress-wrap { background:#e5e7eb; border-radius:4px; height:8px; width:100%; }
   .progress-bar  { height:8px; border-radius:4px; background:linear-gradient(90deg,#f59e0b,#fbbf24); }
+  .nominee-photo {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #f59e0b;
+    display: block;
+  }
+  .nominee-initial {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #000;
+    font-weight: 900;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .nominee-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
   .footer {
     margin-top: 40px;
     border-top: 1px solid #e5e7eb;
@@ -330,7 +356,7 @@ export function exportNominationsPDF(
 
 /** Opens a new tab with a printable Final List & Approved Nominations Report and triggers the print dialog. */
 export function exportFinalListPDF(
-  nominees: { id: string; name: string; categoryId: number; listType?: "final" | "approved" }[],
+  nominees: { id: string; name: string; categoryId: number; listType?: "final" | "approved"; avatarUrl?: string }[],
   categories: { id: number; name: string }[],
   generatedBy: string
 ): void {
@@ -357,10 +383,18 @@ export function exportFinalListPDF(
         const badgeClass = isFinal ? "badge-approved" : "badge-pending";
         const badgeLabel = isFinal ? "Final List" : "Approved";
         
+        const photoHtml = n.avatarUrl
+          ? `<img src="${n.avatarUrl}" class="nominee-photo" alt="${escapeHtml(n.name)}" crossorigin="anonymous" />`
+          : `<div class="nominee-initial">${escapeHtml(n.name.charAt(0).toUpperCase())}</div>`;
         return `
           <tr>
             <td class="rank">#${i + 1}</td>
-            <td><strong>${escapeHtml(n.name)}</strong></td>
+            <td>
+              <div class="nominee-cell">
+                ${photoHtml}
+                <strong>${escapeHtml(n.name)}</strong>
+              </div>
+            </td>
             <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
           </tr>`;
       }).join("");
@@ -429,7 +463,7 @@ export function exportFinalListPDF(
 
 /** Opens a new tab with a printable Vote Standings Report and triggers the print dialog. */
 export function exportVotesPDF(
-  nominees: { id: string; name: string; categoryId: number; votes: number; organization?: string }[],
+  nominees: { id: string; name: string; categoryId: number; votes: number; organization?: string; avatarUrl?: string }[],
   categories: { id: number; name: string }[],
   generatedBy: string
 ): void {
@@ -450,12 +484,20 @@ export function exportVotesPDF(
       const rows = catNominees.map((n, i) => {
         const pct = catTotal > 0 ? ((n.votes / catTotal) * 100).toFixed(1) : "0.0";
         const isWinner = i === 0 && n.votes > 0;
+        const photoHtml = n.avatarUrl
+          ? `<img src="${n.avatarUrl}" class="nominee-photo" alt="${escapeHtml(n.name)}" crossorigin="anonymous" />`
+          : `<div class="nominee-initial">${escapeHtml(n.name.charAt(0).toUpperCase())}</div>`;
         return `
           <tr>
             <td class="rank">${isWinner ? "🥇" : `#${i + 1}`}</td>
             <td>
-              <strong>${escapeHtml(n.name)}</strong>
-              ${n.organization ? `<br/><span style="color:#888;font-size:9px">${escapeHtml(n.organization)}</span>` : ""}
+              <div class="nominee-cell">
+                ${photoHtml}
+                <div>
+                  <strong>${escapeHtml(n.name)}</strong>
+                  ${n.organization ? `<br/><span style="color:#888;font-size:9px">${escapeHtml(n.organization)}</span>` : ""}
+                </div>
+              </div>
             </td>
             <td style="text-align:right;font-weight:700;color:#d97706">${n.votes.toLocaleString()}</td>
             <td style="text-align:right;color:#666">${pct}%</td>

@@ -364,16 +364,7 @@ export const VotingSection: React.FC<VotingSectionProps> = ({
             </div>
           )}
 
-          {/* Multiple Votes Active Banner */}
-          {allowMultipleVotes && !isVotingClosed && (
-            <div className="bg-orange-500/10 border border-orange-400/30 rounded-xl p-3 flex items-center justify-center gap-2.5 text-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.08)] animate-fade-in">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-              <p className="text-[11px] font-bold tracking-wide">
-                <span className="uppercase font-mono mr-1.5">Multiple Votes Enabled —</span>
-                You may vote more than once per category.
-              </p>
-            </div>
-          )}
+
 
       {/* Search & Filter Header Container */}
       <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 sm:p-6 shadow-2xl z-10 relative">

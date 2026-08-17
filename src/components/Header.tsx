@@ -64,7 +64,8 @@ export const Header: React.FC<HeaderProps> = ({
     { id: "admin", label: "Admin Console", icon: Shield },
   ];
 
-  const handleTabClick = (tabId: string) => {
+  const handleTabClick = (tabId: string, e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     setActiveTab(tabId);
     setMobileMenuOpen(false);
   };
@@ -121,9 +122,10 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Main Premium Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 relative z-20">
         {/* Left Side: Branding / Logo */}
-        <button 
-          onClick={() => handleTabClick("overview")} 
-          className="flex items-center gap-3 hover:opacity-90 transition-opacity text-left cursor-pointer bg-transparent border-none p-0 outline-none"
+        <a
+          href="#overview"
+          onClick={(e) => handleTabClick("overview", e)}
+          className="flex items-center gap-3 hover:opacity-90 transition-opacity text-left cursor-pointer"
           id="navbar-logo-btn"
         >
           <img src="/logo.png" alt="AWOL AMERICA Logo" className="h-10 sm:h-12 w-auto object-contain drop-shadow-md" />
@@ -133,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
               {generalContent?.awardsTitle ? generalContent.awardsTitle.replace("AWOL AMERICA ", "") : "10th Achievement Awards"}
             </span>
           </div>
-        </button>
+        </a>
 
         {/* Center: Desktop Navigation Menu */}
         <nav className="hidden md:flex items-center gap-1.5 bg-white/5 border border-white/5 p-1 rounded-xl">
@@ -141,10 +143,11 @@ export const Header: React.FC<HeaderProps> = ({
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button
+              <a
                 key={item.id}
-                onClick={() => handleTabClick(item.id)}
-                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer border-none outline-none ${
+                href={`#${item.id}`}
+                onClick={(e) => handleTabClick(item.id, e)}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer no-underline ${
                   isActive
                     ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black shadow-md font-extrabold"
                     : "text-white/70 hover:text-white hover:bg-white/5"
@@ -156,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {item.showPing && (
                   <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-black" : "bg-amber-400"} inline-block animate-ping`}></span>
                 )}
-              </button>
+              </a>
             );
           })}
         </nav>
@@ -174,13 +177,14 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Call to Action Button */}
           {(isVotingActive || (isResultsActive && (isAdminLoggedIn || settings?.resultsVisible))) && (
-            <button
-              onClick={() => handleTabClick(isVotingActive ? "vote" : "results")}
-              className="hidden sm:inline-flex text-xs font-bold bg-white/5 hover:bg-white/10 text-amber-300 hover:text-amber-400 border border-amber-400/30 hover:border-amber-400/50 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+            <a
+              href={isVotingActive ? "#vote" : "#results"}
+              onClick={(e) => handleTabClick(isVotingActive ? "vote" : "results", e)}
+              className="hidden sm:inline-flex text-xs font-bold bg-white/5 hover:bg-white/10 text-amber-300 hover:text-amber-400 border border-amber-400/30 hover:border-amber-400/50 px-3.5 py-2 rounded-xl transition-all cursor-pointer no-underline"
               id="navbar-cta-btn"
             >
               {isVotingActive ? "Cast Votes" : "View Winners"}
-            </button>
+            </a>
           )}
 
           {/* Mobile Menu Button */}
@@ -208,10 +212,11 @@ export const Header: React.FC<HeaderProps> = ({
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
-                  <button
+                  <a
                     key={item.id}
-                    onClick={() => handleTabClick(item.id)}
-                    className={`w-full text-left px-4 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-between cursor-pointer border-none outline-none ${
+                    href={`#${item.id}`}
+                    onClick={(e) => handleTabClick(item.id, e)}
+                    className={`w-full text-left px-4 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-between cursor-pointer no-underline ${
                       isActive
                         ? "bg-gradient-to-tr from-amber-400 to-amber-600 text-black font-extrabold"
                         : "bg-white/5 text-white/80 hover:bg-white/10 hover:text-white border border-white/5"
@@ -225,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
                     {item.showPing && (
                       <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                     )}
-                  </button>
+                  </a>
                 );
               })}
             </div>

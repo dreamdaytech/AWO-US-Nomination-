@@ -37,10 +37,16 @@ export default function App() {
   
   const [simulatedDate, setSimulatedDate] = useState<Date>(parseLocalDateTime("2026-07-09T12:00:00"));
 
+  const VALID_TABS = ['overview', 'nominate', 'vote', 'results', 'admin'];
+
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (typeof window !== 'undefined') {
+      // ?nominee=... deep-link → go straight to vote
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.has("nominee")) return "vote";
+      // Hash-based routing — e.g. /#vote
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (VALID_TABS.includes(hash)) return hash;
     }
     return localStorage.getItem("awol_active_tab") || "overview";
   });
@@ -140,6 +146,25 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
     setCaptchaError("");
   };
 
+  // Sync hash → tab when user uses browser Back/Forward buttons
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (VALID_TABS.includes(hash)) setActiveTab(hash);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Sync tab → hash + localStorage whenever the active tab changes
+  useEffect(() => {
+    localStorage.setItem("awol_active_tab", activeTab);
+    const newHash = `#${activeTab}`;
+    if (window.location.hash !== newHash) {
+      window.history.pushState(null, '', newHash);
+    }
+  }, [activeTab]);
+
   // Handle Monime Payment Returns from URL parameters
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -166,13 +191,13 @@ Thank you for your continued support. Together, let us embrace the spirit of pos
         }
       }
 
-      // Clean up the URL
-      const newUrl = window.location.pathname + "?tab=vote";
-      window.history.replaceState({}, document.title, newUrl);
+      // Clean up query params, keep hash-based navigation
+      window.history.replaceState({}, document.title, '#vote');
+      setActiveTab('vote');
     } else if (searchParams.get("payment_cancelled") === "true") {
       alert("Payment was cancelled.");
-      const newUrl = window.location.pathname + "?tab=vote";
-      window.history.replaceState({}, document.title, newUrl);
+      window.history.replaceState({}, document.title, '#vote');
+      setActiveTab('vote');
     }
   }, []);
 

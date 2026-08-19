@@ -126,11 +126,15 @@ export const dbService = {
   // ── LISTENERS (real-time) ────────────────────────────────────────────────
 
   listenToCategories: (callback: (categories: Category[]) => void, onReady?: () => void): Unsubscribe => {
+    let currentData: Category[] = [];
     // Initial fetch
     (async () => {
       try {
         const { data, error } = await supabase.from("categories").select("*");
-        if (data) callback(data.map(toCategory));
+        if (data) {
+          currentData = data.map(toCategory);
+          callback([...currentData]);
+        }
       } catch (e) {
         console.error("Error fetching categories:", e);
       } finally {
@@ -141,10 +145,18 @@ export const dbService = {
     const channel = supabase
       .channel("public:categories")
       .on("postgres_changes", { event: "*", schema: "public", table: "categories" },
-        () => {
-          supabase.from("categories").select("*").then(({ data }) => {
-            if (data) callback(data.map(toCategory));
-          });
+        (payload: any) => {
+          if (payload.eventType === "INSERT") {
+            currentData.push(toCategory(payload.new));
+          } else if (payload.eventType === "UPDATE") {
+            const idx = currentData.findIndex((item) => item.id === payload.new.id);
+            if (idx !== -1) currentData[idx] = toCategory(payload.new);
+            else currentData.push(toCategory(payload.new));
+          } else if (payload.eventType === "DELETE") {
+            currentData = currentData.filter((item) => item.id !== payload.old.id);
+          }
+          currentData.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+          callback([...currentData]);
         }
       )
       .subscribe();
@@ -356,14 +368,24 @@ export const dbService = {
   },
 
   listenToAdmins: (callback: (admins: AdminUser[]) => void): Unsubscribe => {
+    let currentData: AdminUser[] = [];
     supabase.from("admins").select("*").then(({ data }) => {
-      callback((data ?? []).map(toAdminUser));
+      currentData = (data ?? []).map(toAdminUser);
+      callback([...currentData]);
     });
     const channel = supabase
       .channel("admins-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, async () => {
-        const { data } = await supabase.from("admins").select("*");
-        callback((data ?? []).map(toAdminUser));
+      .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.push(toAdminUser(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toAdminUser(payload.new);
+          else currentData.push(toAdminUser(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
@@ -390,80 +412,132 @@ export const dbService = {
   },
 
   listenToNominations: (callback: (nominations: Nomination[]) => void): Unsubscribe => {
+    let currentData: Nomination[] = [];
     // Initial fetch
     supabase.from("nominations").select("*").then(({ data }) => {
-      callback((data ?? []).map(toNomination));
+      currentData = (data ?? []).map(toNomination);
+      callback([...currentData]);
     });
     // Real-time
     const channel = supabase
       .channel("nominations-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "nominations" }, async () => {
-        const { data } = await supabase.from("nominations").select("*");
-        callback((data ?? []).map(toNomination));
+      .on("postgres_changes", { event: "*", schema: "public", table: "nominations" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.push(toNomination(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toNomination(payload.new);
+          else currentData.push(toNomination(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
   },
 
   listenToMessages: (callback: (messages: Message[]) => void): Unsubscribe => {
+    let currentData: Message[] = [];
     // Initial fetch (ordered newest first)
     supabase.from("messages").select("*").order("created_at", { ascending: false }).then(({ data }) => {
-      callback((data ?? []).map(toMessage));
+      currentData = (data ?? []).map(toMessage);
+      callback([...currentData]);
     });
     // Real-time
     const channel = supabase
       .channel("messages-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, async () => {
-        const { data } = await supabase.from("messages").select("*").order("created_at", { ascending: false });
-        callback((data ?? []).map(toMessage));
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.unshift(toMessage(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toMessage(payload.new);
+          else currentData.unshift(toMessage(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        currentData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
   },
 
   listenToNominees: (callback: (nominees: Nominee[]) => void): Unsubscribe => {
+    let currentData: Nominee[] = [];
     // Initial fetch
     supabase.from("nominees").select("*").then(({ data }) => {
-      callback((data ?? []).map(toNominee));
+      currentData = (data ?? []).map(toNominee);
+      callback([...currentData]);
     });
     // Real-time
     const channel = supabase
       .channel("nominees-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "nominees" }, async () => {
-        const { data } = await supabase.from("nominees").select("*");
-        callback((data ?? []).map(toNominee));
+      .on("postgres_changes", { event: "*", schema: "public", table: "nominees" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.push(toNominee(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toNominee(payload.new);
+          else currentData.push(toNominee(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
   },
 
   listenToNomineeGroups: (callback: (groups: NomineeGroup[]) => void): Unsubscribe => {
+    let currentData: NomineeGroup[] = [];
     // Initial fetch
     supabase.from("nominee_groups").select("*").then(({ data }) => {
-      callback((data ?? []).map(toNomineeGroup));
+      currentData = (data ?? []).map(toNomineeGroup);
+      callback([...currentData]);
     });
     // Real-time
     const channel = supabase
       .channel("nominee-groups-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "nominee_groups" }, async () => {
-        const { data } = await supabase.from("nominee_groups").select("*");
-        callback((data ?? []).map(toNomineeGroup));
+      .on("postgres_changes", { event: "*", schema: "public", table: "nominee_groups" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.push(toNomineeGroup(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toNomineeGroup(payload.new);
+          else currentData.push(toNomineeGroup(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
   },
 
   listenToGroupingAuditLogs: (callback: (logs: GroupingAuditLog[]) => void): Unsubscribe => {
+    let currentData: GroupingAuditLog[] = [];
     // Initial fetch (ordered newest first)
     supabase.from("grouping_audit_logs").select("*").order("timestamp", { ascending: false }).then(({ data }) => {
-      callback((data ?? []).map(toGroupingAuditLog));
+      currentData = (data ?? []).map(toGroupingAuditLog);
+      callback([...currentData]);
     });
     // Real-time
     const channel = supabase
       .channel("audit-logs-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "grouping_audit_logs" }, async () => {
-        const { data } = await supabase.from("grouping_audit_logs").select("*").order("timestamp", { ascending: false });
-        callback((data ?? []).map(toGroupingAuditLog));
+      .on("postgres_changes", { event: "*", schema: "public", table: "grouping_audit_logs" }, (payload: any) => {
+        if (payload.eventType === "INSERT") {
+          currentData.unshift(toGroupingAuditLog(payload.new));
+        } else if (payload.eventType === "UPDATE") {
+          const idx = currentData.findIndex((item) => item.id === payload.new.id);
+          if (idx !== -1) currentData[idx] = toGroupingAuditLog(payload.new);
+          else currentData.unshift(toGroupingAuditLog(payload.new));
+        } else if (payload.eventType === "DELETE") {
+          currentData = currentData.filter((item) => item.id !== payload.old.id);
+        }
+        currentData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        callback([...currentData]);
       })
       .subscribe();
     return makeUnsubscribe(channel);
